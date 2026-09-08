@@ -161,3 +161,41 @@ expect:
   ssl_check: true
   ssl_warn_days: 14             # Warns if expiration is within 14 days
 ```
+
+## Metrics Server Settings
+
+The optional `metrics` section enables an embedded HTTP server for Prometheus scraping and JSON health monitoring:
+
+- `enabled`: Activates the background HTTP server. Default is `false`.
+- `host`: Listen interface address. Default is `"0.0.0.0"`.
+- `port`: Port number. Default is `9090`.
+
+Endpoints exposed:
+- `/metrics`: Prometheus text exposition format (gauges and counters).
+- `/healthz`: JSON health status payload.
+
+## Discord Settings
+
+The `discord` section delivers rich card embeds to Discord channels:
+
+- `webhook_url`: Discord incoming webhook URL.
+- `username`: Sender name displayed on messages. Default is `"Sentinel"`.
+- `avatar_url`: Optional avatar image URL.
+- `enabled`: Enables or disables Discord notifications.
+
+## Slack Settings
+
+The `slack` section formats alerts using Slack Block Kit:
+
+- `webhook_url`: Slack incoming webhook URL.
+- `enabled`: Enables or disables Slack notifications.
+
+## TCP Targets
+
+Use `tcp_targets` to verify network socket connectivity for databases, caches, and internal services:
+
+- `name`: Human-readable service label.
+- `host`: Hostname or IP address.
+- `port`: Target TCP port number.
+- `interval`: Interval between checks. Default is `60s`.
+- `timeout`: Socket connection timeout. Default is `5s`.

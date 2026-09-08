@@ -1,5 +1,6 @@
 """Unit tests for Sentinel Typer CLI commands."""
 
+import asyncio
 import time
 from typer.testing import CliRunner
 from sentinel.cli import app
@@ -80,3 +81,34 @@ targets:
     assert result_json.exit_code == 0
     assert '"all_passed": true' in result_json.output
     assert '"API Test"' in result_json.output
+
+
+def test_cli_probe_tcp(monkeypatch, tmp_path):
+    async def mock_open_connection(host, port):
+        class MockWriter:
+            def close(self):
+                pass
+            async def wait_closed(self):
+                pass
+        return None, MockWriter()
+
+    monkeypatch.setattr(asyncio, "open_connection", mock_open_connection)
+
+    yaml_content = """
+tcp_targets:
+  - name: "Redis Cache"
+    host: "127.0.0.1"
+    port: 6379
+"""
+    cfg_file = tmp_path / "sites_tcp.yaml"
+    cfg_file.write_text(yaml_content, encoding="utf-8")
+
+    result = runner.invoke(app, ["probe", str(cfg_file)])
+    assert result.exit_code == 0
+    assert "Redis Cache" in result.output
+    assert "PASS" in result.output
+
+    result_json = runner.invoke(app, ["probe", str(cfg_file), "--json"])
+    assert result_json.exit_code == 0
+    assert '"all_passed": true' in result_json.output
+    assert '"Redis Cache"' in result_json.output

@@ -137,6 +137,60 @@ class WebhookConfig(BaseModel):
         return bool(self.enabled and self.url.strip())
 
 
+class DiscordConfig(BaseModel):
+    """Discord webhook alerting configuration."""
+
+    webhook_url: str = Field(default="", description="Discord webhook URL")
+    username: str = Field(default="Sentinel", description="Bot username shown in Discord")
+    avatar_url: str = Field(default="", description="Optional bot avatar URL")
+    enabled: bool = Field(default=True, description="Enable Discord notifications")
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.enabled and self.webhook_url.strip())
+
+
+class SlackConfig(BaseModel):
+    """Slack incoming webhook alerting configuration."""
+
+    webhook_url: str = Field(default="", description="Slack incoming webhook URL")
+    channel: str = Field(default="", description="Optional Slack channel override")
+    enabled: bool = Field(default=True, description="Enable Slack notifications")
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.enabled and self.webhook_url.strip())
+
+
+class MetricsConfig(BaseModel):
+    """Prometheus metrics and HTTP probe server configuration."""
+
+    enabled: bool = Field(default=False, description="Enable embedded metrics and health server")
+    host: str = Field(default="0.0.0.0", description="Bind host for HTTP server")
+    port: int = Field(default=9090, description="Bind port for HTTP server")
+
+
+class TCPTargetConfig(BaseModel):
+    """TCP socket connection monitoring target."""
+
+    name: str = Field(..., description="Descriptive target name")
+    host: str = Field(..., description="Target hostname or IP address")
+    port: int = Field(..., ge=1, le=65535, description="Target TCP port")
+    interval: float | None = Field(
+        default=None, description="Check interval (overrides global default)"
+    )
+    timeout: float | None = Field(
+        default=None, description="Connection timeout (overrides global default)"
+    )
+
+    @field_validator("interval", "timeout", mode="before")
+    @classmethod
+    def _validate_durations(cls, v: Any) -> float | None:
+        if v is None:
+            return None
+        return parse_duration(v)
+
+
 class ExpectConfig(BaseModel):
     """Assertions required for a health check to pass."""
 
@@ -214,7 +268,11 @@ class SentinelConfig(BaseModel):
     global_config: GlobalConfig = Field(default_factory=GlobalConfig, alias="global")
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     webhook: WebhookConfig = Field(default_factory=WebhookConfig)
+    discord: DiscordConfig = Field(default_factory=DiscordConfig)
+    slack: SlackConfig = Field(default_factory=SlackConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     targets: list[TargetConfig] = Field(default_factory=list)
+    tcp_targets: list[TCPTargetConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _apply_global_defaults(self) -> SentinelConfig:
@@ -223,6 +281,11 @@ class SentinelConfig(BaseModel):
                 target.interval = self.global_config.default_interval
             if target.timeout is None:
                 target.timeout = self.global_config.default_timeout
+        for tcp in self.tcp_targets:
+            if tcp.interval is None:
+                tcp.interval = self.global_config.default_interval
+            if tcp.timeout is None:
+                tcp.timeout = self.global_config.default_timeout
         return self
 
     @classmethod

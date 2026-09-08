@@ -20,9 +20,9 @@ logger = logging.getLogger("sentinel.notifier")
 class TelegramNotifier:
     """Delivers formatted monitoring alerts via Telegram Bot API."""
 
-    def __init__(self, config: TelegramConfig) -> None:
-        self.config = config
-        self._api_base = f"https://api.telegram.org/bot{self.config.bot_token}"
+    def __init__(self, config: TelegramConfig | None = None) -> None:
+        self.config = config or TelegramConfig()
+        self._api_base = f"https://api.telegram.org/bot{self.config.bot_token or ''}"
 
     async def send_message(
         self,
@@ -233,16 +233,255 @@ class WebhookNotifier:
         return False
 
 
+class DiscordNotifier:
+    """Delivers rich embed alerts to Discord webhooks."""
+
+    def __init__(self, config: Any) -> None:
+        self.config = config
+
+    async def send_message(self, payload: dict[str, Any], max_retries: int = 3) -> bool:
+        if not getattr(self.config, "is_configured", False):
+            return False
+
+        url = self.config.webhook_url
+        delay = 1.0
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    res = await client.post(url, json=payload)
+                    if res.is_success:
+                        return True
+                    logger.warning("Discord webhook returned status %d", res.status_code)
+                except Exception as exc:
+                    logger.warning("Discord delivery error: %s", exc)
+
+                if attempt < max_retries:
+                    await asyncio.sleep(delay)
+                    delay *= 2.0
+        return False
+
+    async def send_outage_alert(
+        self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        payload = {
+            "username": getattr(self.config, "username", "Sentinel"),
+            "avatar_url": getattr(self.config, "avatar_url", None) or None,
+            "embeds": [
+                {
+                    "title": f"🚨 SERVICE DOWN: {state.name}",
+                    "description": f"Health check failed for `{state.name}`.",
+                    "color": 15158332,
+                    "fields": [
+                        {"name": "URL", "value": f"`{state.url}`", "inline": False},
+                        {"name": "Reason", "value": state.last_error_reason or "Failed", "inline": False},
+                        {"name": "HTTP Status", "value": str(state.last_status_code or "N/A"), "inline": True},
+                        {"name": "Latency", "value": f"{int(state.last_latency_ms)} ms", "inline": True},
+                        {"name": "Consecutive Failures", "value": f"{state.consecutive_failures} / {debounce_threshold}", "inline": True},
+                    ],
+                    "timestamp": ts.isoformat(),
+                }
+            ],
+        }
+        return await self.send_message(payload)
+
+    async def send_recovery_alert(self, state: TargetState, timestamp: datetime | None = None) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        duration_str = format_duration(state.previous_downtime_seconds)
+        payload = {
+            "username": getattr(self.config, "username", "Sentinel"),
+            "avatar_url": getattr(self.config, "avatar_url", None) or None,
+            "embeds": [
+                {
+                    "title": f"✅ SERVICE RECOVERED: {state.name}",
+                    "description": f"Service `{state.name}` has recovered.",
+                    "color": 3066993,
+                    "fields": [
+                        {"name": "URL", "value": f"`{state.url}`", "inline": False},
+                        {"name": "Downtime Duration", "value": duration_str, "inline": True},
+                        {"name": "Current Latency", "value": f"{int(state.last_latency_ms)} ms", "inline": True},
+                    ],
+                    "timestamp": ts.isoformat(),
+                }
+            ],
+        }
+        return await self.send_message(payload)
+
+    async def send_test_alert(self) -> bool:
+        payload = {
+            "username": getattr(self.config, "username", "Sentinel"),
+            "embeds": [
+                {
+                    "title": "🔍 SENTINEL TEST ALERT",
+                    "description": "Discord webhook delivery verified successfully.",
+                    "color": 3447003,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            ],
+        }
+        return await self.send_message(payload)
+
+    async def send_daily_summary(self, states: list[TargetState], timestamp: datetime | None = None) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        total = len(states)
+        healthy = sum(1 for s in states if s.status.value == "UP")
+        avg_uptime = (sum(s.uptime_percentage for s in states) / total) if total > 0 else 100.0
+
+        rows = [f"• **{s.name}**: {s.uptime_percentage:.1f}% uptime ({int(s.last_latency_ms)}ms)" for s in states]
+        payload = {
+            "username": getattr(self.config, "username", "Sentinel"),
+            "embeds": [
+                {
+                    "title": "📊 SENTINEL DAILY SUMMARY",
+                    "description": "\n".join(rows),
+                    "color": 3447003,
+                    "fields": [
+                        {"name": "Total Monitored", "value": str(total), "inline": True},
+                        {"name": "Healthy", "value": str(healthy), "inline": True},
+                        {"name": "Average Uptime", "value": f"{avg_uptime:.2f}%", "inline": True},
+                    ],
+                    "timestamp": ts.isoformat(),
+                }
+            ],
+        }
+        return await self.send_message(payload)
+
+
+class SlackNotifier:
+    """Delivers Block Kit alerts to Slack incoming webhooks."""
+
+    def __init__(self, config: Any) -> None:
+        self.config = config
+
+    async def send_message(self, payload: dict[str, Any], max_retries: int = 3) -> bool:
+        if not getattr(self.config, "is_configured", False):
+            return False
+
+        url = self.config.webhook_url
+        delay = 1.0
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    res = await client.post(url, json=payload)
+                    if res.is_success:
+                        return True
+                    logger.warning("Slack webhook returned status %d", res.status_code)
+                except Exception as exc:
+                    logger.warning("Slack delivery error: %s", exc)
+
+                if attempt < max_retries:
+                    await asyncio.sleep(delay)
+                    delay *= 2.0
+        return False
+
+    async def send_outage_alert(
+        self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
+    ) -> bool:
+        payload = {
+            "text": f"🚨 SERVICE DOWN: {state.name}",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"🚨 SERVICE DOWN: {state.name}"},
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*URL:*\n`{state.url}`"},
+                        {"type": "mrkdwn", "text": f"*HTTP Status:*\n{state.last_status_code or 'N/A'}"},
+                        {"type": "mrkdwn", "text": f"*Reason:*\n{state.last_error_reason or 'Failure'}"},
+                        {"type": "mrkdwn", "text": f"*Failures:*\n{state.consecutive_failures} / {debounce_threshold}"},
+                    ],
+                },
+            ],
+        }
+        return await self.send_message(payload)
+
+    async def send_recovery_alert(self, state: TargetState, timestamp: datetime | None = None) -> bool:
+        duration_str = format_duration(state.previous_downtime_seconds)
+        payload = {
+            "text": f"✅ SERVICE RECOVERED: {state.name}",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"✅ SERVICE RECOVERED: {state.name}"},
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*URL:*\n`{state.url}`"},
+                        {"type": "mrkdwn", "text": f"*Downtime Duration:*\n{duration_str}"},
+                        {"type": "mrkdwn", "text": f"*Current Latency:*\n{int(state.last_latency_ms)} ms"},
+                    ],
+                },
+            ],
+        }
+        return await self.send_message(payload)
+
+    async def send_test_alert(self) -> bool:
+        payload = {
+            "text": "🔍 SENTINEL TEST ALERT",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": "🔍 SENTINEL TEST ALERT"},
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": "Slack webhook alert delivery verified."},
+                },
+            ],
+        }
+        return await self.send_message(payload)
+
+    async def send_daily_summary(self, states: list[TargetState], timestamp: datetime | None = None) -> bool:
+        total = len(states)
+        healthy = sum(1 for s in states if s.status.value == "UP")
+        avg_uptime = (sum(s.uptime_percentage for s in states) / total) if total > 0 else 100.0
+
+        payload = {
+            "text": "📊 SENTINEL DAILY SUMMARY",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": "📊 SENTINEL DAILY SUMMARY"},
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": f"*Monitored:*\n{total}"},
+                        {"type": "mrkdwn", "text": f"*Healthy:*\n{healthy}"},
+                        {"type": "mrkdwn", "text": f"*Average Uptime:*\n{avg_uptime:.2f}%"},
+                    ],
+                },
+            ],
+        }
+        return await self.send_message(payload)
+
+
 class AlertDispatcher:
     """Coordinates notifications across all configured channels."""
 
-    def __init__(self, telegram_cfg: Any, webhook_cfg: Any) -> None:
+    def __init__(
+        self,
+        telegram_cfg: Any,
+        webhook_cfg: Any,
+        discord_cfg: Any = None,
+        slack_cfg: Any = None,
+    ) -> None:
         self.telegram = TelegramNotifier(telegram_cfg)
         self.webhook = WebhookNotifier(webhook_cfg)
+        self.discord = DiscordNotifier(discord_cfg)
+        self.slack = SlackNotifier(slack_cfg)
 
     @property
     def is_configured(self) -> bool:
-        return self.telegram.config.is_configured or self.webhook.config.is_configured
+        return (
+            self.telegram.config.is_configured
+            or self.webhook.config.is_configured
+            or self.discord.config.is_configured
+            or self.slack.config.is_configured
+        )
 
     async def send_outage_alert(
         self,
@@ -264,6 +503,8 @@ class AlertDispatcher:
                 "consecutive_failures": state.consecutive_failures,
                 "timestamp": ts.isoformat(),
             }),
+            self.discord.send_outage_alert(state, debounce_threshold, ts),
+            self.slack.send_outage_alert(state, debounce_threshold, ts),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -286,6 +527,8 @@ class AlertDispatcher:
                 "downtime_duration": format_duration(state.previous_downtime_seconds),
                 "timestamp": ts.isoformat(),
             }),
+            self.discord.send_recovery_alert(state, ts),
+            self.slack.send_recovery_alert(state, ts),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -298,6 +541,8 @@ class AlertDispatcher:
                 "message": "Sentinel alert delivery verified",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }),
+            self.discord.send_test_alert(),
+            self.slack.send_test_alert(),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -326,6 +571,8 @@ class AlertDispatcher:
                 ],
                 "timestamp": ts.isoformat(),
             }),
+            self.discord.send_daily_summary(states, ts),
+            self.slack.send_daily_summary(states, ts),
             return_exceptions=True,
         )
         return any(r is True for r in results)

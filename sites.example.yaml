@@ -5,6 +5,11 @@ global:
   consecutive_failures_to_alert: 2 # Debounce: alert triggered after 2 consecutive failures
   daily_summary_time: "09:00"      # Optional daily summary notification time in UTC
 
+metrics:
+  enabled: true                    # Embedded async metrics server
+  host: "0.0.0.0"                  # Listen address
+  port: 9090                       # Serves /metrics (Prometheus) and /healthz (JSON)
+
 telegram:
   bot_token: "env:TELEGRAM_BOT_TOKEN" # Resolves environment variable
   chat_id: "env:TELEGRAM_CHAT_ID"     # Destination chat or channel ID
@@ -12,9 +17,19 @@ telegram:
   enabled: true
 
 webhook:
-  url: "env:WEBHOOK_URL"              # Optional JSON webhook (Slack, Discord, PagerDuty, custom)
+  url: "env:WEBHOOK_URL"              # Generic JSON webhook endpoint
   headers:
     X-Sentinel-Auth: "env:WEBHOOK_SECRET"
+  enabled: false
+
+discord:
+  webhook_url: "env:DISCORD_WEBHOOK_URL" # Native Discord webhook with rich embeds
+  username: "Sentinel"
+  avatar_url: ""
+  enabled: false
+
+slack:
+  webhook_url: "env:SLACK_WEBHOOK_URL"   # Native Slack incoming webhook with Block Kit
   enabled: false
 
 targets:
@@ -50,3 +65,16 @@ targets:
     body: '{"test": true}'
     expect:
       status_code: [200, 201, 204]
+
+tcp_targets:
+  - name: "Primary PostgreSQL"
+    host: "db.internal.example.com"
+    port: 5432
+    interval: 30s
+    timeout: 3s
+
+  - name: "Redis Cache Cluster"
+    host: "127.0.0.1"
+    port: 6379
+    interval: 15s
+    timeout: 2s

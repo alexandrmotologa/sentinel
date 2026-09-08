@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from sentinel.config import TargetConfig
+from sentinel.config import TargetConfig, TCPTargetConfig
 
 
 @dataclass
@@ -326,3 +326,59 @@ async def evaluate_target(target: TargetConfig, client: httpx.AsyncClient) -> Ch
         ssl_days_left=ssl_days,
         checked_at=datetime.now(timezone.utc),
     )
+
+
+async def evaluate_tcp_target(target: TCPTargetConfig) -> CheckResult:
+    """Evaluate socket connectivity to a TCP host and port."""
+    timeout = target.timeout or 5.0
+    start_time = time.perf_counter()
+
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(target.host, target.port),
+            timeout=timeout,
+        )
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+        return CheckResult(
+            passed=True,
+            status_code=None,
+            status_phrase="Connected",
+            latency_ms=latency_ms,
+            checked_at=datetime.now(timezone.utc),
+        )
+    except asyncio.TimeoutError:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return CheckResult(
+            passed=False,
+            status_code=None,
+            status_phrase="Timeout",
+            latency_ms=latency_ms,
+            error_reason=f"TCP connection timed out after {timeout:.1f}s",
+            checked_at=datetime.now(timezone.utc),
+        )
+    except ConnectionRefusedError:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return CheckResult(
+            passed=False,
+            status_code=None,
+            status_phrase="Connection Refused",
+            latency_ms=latency_ms,
+            error_reason=f"Connection refused on {target.host}:{target.port}",
+            checked_at=datetime.now(timezone.utc),
+        )
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return CheckResult(
+            passed=False,
+            status_code=None,
+            status_phrase="Connection Failed",
+            latency_ms=latency_ms,
+            error_reason=str(exc),
+            checked_at=datetime.now(timezone.utc),
+        )
