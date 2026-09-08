@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>sentinel run --dashboard sites.yaml</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background: radial-gradient(circle at 50% 20%, #1e2536 0%, #0d1117 100%);
+    padding: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.terminal-window {
+    background: #0a0d14;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    width: 100%;
+    max-width: 1120px;
+}
+.terminal-header {
+    background: #161b26;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.buttons {
+    display: flex;
+    gap: 8px;
+}
+.btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.btn.red { background: #ff5f56; }
+.btn.yellow { background: #ffbd2e; }
+.btn.green { background: #27c93f; }
+.title {
+    flex: 1;
+    text-align: center;
+    color: #8b949e;
+    font-size: 13px;
+    font-weight: 500;
+    margin-right: 48px;
+}
+.terminal-body {
+    padding: 22px 26px;
+    background: #0d1117;
+    overflow-x: auto;
+}
+pre, code {
+    font-family: Consolas, 'Cascadia Code', 'Fira Code', Menlo, monospace !important;
+    font-size: 13.5px !important;
+    line-height: 1.4 !important;
+    color: #e6edf3 !important;
+}
+
+.r1 {color: #a78bfa; text-decoration-color: #a78bfa}
+.r2 {color: #38bdf8; text-decoration-color: #38bdf8; font-weight: bold}
+.r3 {color: #c084fc; text-decoration-color: #c084fc}
+.r4 {color: #fbbf24; text-decoration-color: #fbbf24}
+.r5 {color: #38bdf8; text-decoration-color: #38bdf8}
+.r6 {color: #fb7185; text-decoration-color: #fb7185; font-weight: bold}
+.r7 {color: #4ade80; text-decoration-color: #4ade80; font-weight: bold}
+.r8 {color: #4ade80; text-decoration-color: #4ade80}
+.r9 {color: #94a3b8; text-decoration-color: #94a3b8}
+</style>
+</head>
+<body>
+<div class="terminal-window">
+    <div class="terminal-header">
+        <div class="buttons">
+            <span class="btn red"></span>
+            <span class="btn yellow"></span>
+            <span class="btn green"></span>
+        </div>
+        <div class="title">sentinel run --dashboard sites.yaml</div>
+    </div>
+    <div class="terminal-body">
+        <pre style="font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><code style="font-family:inherit"><span class="r1">┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="r1">│ </span><span class="r2">🛡️  SENTINEL MONITORING DAEMON</span><span class="r3">  |  Uptime: 4 hours</span><span class="r4">  |  Services: 4/5 Healthy</span><span class="r5">  |  Avg Uptime: 99.3%</span><span class="r3">  |  </span><span class="r1">    │</span>
+<span class="r1">└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</span>
+┌─────────────────────────────────────────── Monitored Endpoints ────────────────────────────────────────────┐
+│ ┌────────────────┬──────────┬──────────────┬──────────────┬───────────┬───────────┬──────────────────────┐ │
+│ │<span class="r6"> Target         </span>│<span class="r6">  Status  </span>│<span class="r6">      Latency </span>│<span class="r6">  Avg Latency </span>│<span class="r6">    Uptime </span>│<span class="r6"> Failures  </span>│<span class="r6"> Details              </span>│ │
+│ ├────────────────┼──────────┼──────────────┼──────────────┼───────────┼───────────┼──────────────────────┤ │
+│ │<span class="r5"> Production API </span>│    <span class="r7">UP</span>    │       <span class="r8">  45ms</span> │          0ms │    100.0% │     0     │<span class="r9"> HTTP 200 - All       </span>│ │
+│ │<span class="r5"> Health         </span>│          │              │              │           │           │<span class="r9"> checks passing       </span>│ │
+│ │<span class="r5"> Landing Page   </span>│    <span class="r7">UP</span>    │      <span class="r8">  112ms</span> │          0ms │     99.6% │     0     │<span class="r9"> HTTP 200 - All       </span>│ │
+│ │<span class="r5">                </span>│          │              │              │           │           │<span class="r9"> checks passing       </span>│ │
+│ │<span class="r5"> Stripe Webhook </span>│   <span class="r6">DOWN</span>   │      <span class="r4">▄ 502ms</span> │          0ms │     96.9% │     3     │<span class="r9"> HTTP 503 - All       </span>│ │
+│ │<span class="r5"> Listener       </span>│          │              │              │           │           │<span class="r9"> checks passing       </span>│ │
+│ │<span class="r5"> Primary        </span>│    <span class="r7">UP</span>    │       <span class="r8">  12ms</span> │          0ms │    100.0% │     0     │<span class="r9"> All checks passing   </span>│ │
+│ │<span class="r5"> PostgreSQL     </span>│          │              │              │           │           │<span class="r9">                      </span>│ │
+│ │<span class="r5"> Redis Cache    </span>│    <span class="r7">UP</span>    │        <span class="r8">  2ms</span> │          0ms │    100.0% │     0     │<span class="r9"> All checks passing   </span>│ │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+<span class="r9">┌─────────────────────────────────────────── Recent Alert Events ────────────────────────────────────────────┐</span>
+<span class="r9">│  01:37:06         Telegram alert dispatched to chat -100123456789                                          │</span>
+<span class="r9">│  01:37:06         OUTAGE: Stripe Webhook Listener returned 503 Service Unavailable                         │</span>
+<span class="r9">│  01:37:06         Prometheus metrics server active on http://0.0.0.0:9090                                  │</span>
+<span class="r9">│  01:37:06         Daemon initialized with 5 targets (3 HTTP, 2 TCP)                                        │</span>
+<span class="r9">│                                                                                                            │</span>
+<span class="r9">│                                                                                                            │</span>
+<span class="r9">└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</span>
+</code></pre>
+    </div>
+</div>
+</body>
+</html>

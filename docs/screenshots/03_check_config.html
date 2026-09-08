@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>sentinel check-config sites.yaml</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background: radial-gradient(circle at 50% 20%, #1e2536 0%, #0d1117 100%);
+    padding: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.terminal-window {
+    background: #0a0d14;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    width: 100%;
+    max-width: 1120px;
+}
+.terminal-header {
+    background: #161b26;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.buttons {
+    display: flex;
+    gap: 8px;
+}
+.btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.btn.red { background: #ff5f56; }
+.btn.yellow { background: #ffbd2e; }
+.btn.green { background: #27c93f; }
+.title {
+    flex: 1;
+    text-align: center;
+    color: #8b949e;
+    font-size: 13px;
+    font-weight: 500;
+    margin-right: 48px;
+}
+.terminal-body {
+    padding: 22px 26px;
+    background: #0d1117;
+    overflow-x: auto;
+}
+pre, code {
+    font-family: Consolas, 'Cascadia Code', 'Fira Code', Menlo, monospace !important;
+    font-size: 13.5px !important;
+    line-height: 1.4 !important;
+    color: #e6edf3 !important;
+}
+
+.r1 {color: #38bdf8; text-decoration-color: #38bdf8; font-weight: bold}
+.r2 {color: #4ade80; text-decoration-color: #4ade80; font-weight: bold}
+.r3 {color: #38bdf8; text-decoration-color: #38bdf8}
+.r4 {color: #fbbf24; text-decoration-color: #fbbf24; font-weight: bold}
+.r5 {color: #fbbf24; text-decoration-color: #fbbf24}
+.r6 {color: #4ade80; text-decoration-color: #4ade80}
+.r7 {font-weight: bold}
+.r8 {color: #a78bfa; text-decoration-color: #a78bfa; text-decoration: underline}
+.r9 {font-style: italic}
+.r10 {color: #fb7185; text-decoration-color: #fb7185; font-weight: bold}
+.r11 {color: #f6f6ef; text-decoration-color: #f6f6ef}
+.r12 {color: #fb7185; text-decoration-color: #fb7185}
+</style>
+</head>
+<body>
+<div class="terminal-window">
+    <div class="terminal-header">
+        <div class="buttons">
+            <span class="btn red"></span>
+            <span class="btn yellow"></span>
+            <span class="btn green"></span>
+        </div>
+        <div class="title">sentinel check-config sites.yaml</div>
+    </div>
+    <div class="terminal-body">
+        <pre style="font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><code style="font-family:inherit"><span class="r1">$ sentinel check-config sites.yaml</span>
+
+<span class="r2">Configuration valid:</span> sites.yaml
+Default interval: <span class="r3">60s</span> | Default timeout: <span class="r3">10s</span> | Debounce: <span class="r4">2</span> failures
+Telegram: <span class="r5">Disabled</span> | Webhook: <span class="r5">Disabled</span> | Discord: <span class="r5">Disabled</span> | Slack: <span class="r5">Disabled</span>
+Metrics server: <span class="r6">Enabled</span> <span class="r7">(</span><span class="r8">http://0.0.0.0:9090/metrics)</span>
+<span class="r9">                                                  Configured Targets                                                  </span>
+┌───────┬─────────────────────────┬───────────────────────────────────┬──────────┬───────────────────────────────────┐
+│<span class="r10"> Type  </span>│<span class="r10"> Target Name             </span>│<span class="r10"> Endpoint                          </span>│<span class="r10"> Interval </span>│<span class="r10"> Expectation Rules                 </span>│
+├───────┼─────────────────────────┼───────────────────────────────────┼──────────┼───────────────────────────────────┤
+│<span class="r5"> HTTP  </span>│<span class="r3"> Production API Health   </span>│<span class="r11"> GET                               </span>│<span class="r6">      30s </span>│<span class="r12"> code=200, latency&lt;=1500ms,        </span>│
+│<span class="r5">       </span>│<span class="r3">                         </span>│<span class="r11"> https://api.example.com/health    </span>│<span class="r6">          </span>│<span class="r12"> json-path                         </span>│
+│<span class="r5"> HTTP  </span>│<span class="r3"> Landing Page            </span>│<span class="r11"> GET https://example.com           </span>│<span class="r6">      60s </span>│<span class="r12"> code=200, text=&#x27;Example           </span>│
+│<span class="r5">       </span>│<span class="r3">                         </span>│<span class="r11">                                   </span>│<span class="r6">          </span>│<span class="r12"> Domain...&#x27;, ssl&lt;=14d              </span>│
+│<span class="r5"> HTTP  </span>│<span class="r3"> Stripe Webhook Listener </span>│<span class="r11"> POST                              </span>│<span class="r6">      45s </span>│<span class="r12"> code=[200, 201, 204]              </span>│
+│<span class="r5">       </span>│<span class="r3">                         </span>│<span class="r11"> https://hooks.example.com/ping    </span>│<span class="r6">          </span>│<span class="r12">                                   </span>│
+│<span class="r5"> TCP   </span>│<span class="r3"> Primary PostgreSQL      </span>│<span class="r11"> tcp://db.internal.example.com:54… </span>│<span class="r6">      30s </span>│<span class="r12"> timeout=3.0s                      </span>│
+│<span class="r5"> TCP   </span>│<span class="r3"> Redis Cache Cluster     </span>│<span class="r11"> tcp://127.0.0.1:6379              </span>│<span class="r6">      15s </span>│<span class="r12"> timeout=2.0s                      </span>│
+└───────┴─────────────────────────┴───────────────────────────────────┴──────────┴───────────────────────────────────┘
+</code></pre>
+    </div>
+</div>
+</body>
+</html>

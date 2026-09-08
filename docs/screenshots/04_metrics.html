@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>sentinel metrics & health endpoints (9090)</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background: radial-gradient(circle at 50% 20%, #1e2536 0%, #0d1117 100%);
+    padding: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.terminal-window {
+    background: #0a0d14;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    width: 100%;
+    max-width: 1120px;
+}
+.terminal-header {
+    background: #161b26;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.buttons {
+    display: flex;
+    gap: 8px;
+}
+.btn {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.btn.red { background: #ff5f56; }
+.btn.yellow { background: #ffbd2e; }
+.btn.green { background: #27c93f; }
+.title {
+    flex: 1;
+    text-align: center;
+    color: #8b949e;
+    font-size: 13px;
+    font-weight: 500;
+    margin-right: 48px;
+}
+.terminal-body {
+    padding: 22px 26px;
+    background: #0d1117;
+    overflow-x: auto;
+}
+pre, code {
+    font-family: Consolas, 'Cascadia Code', 'Fira Code', Menlo, monospace !important;
+    font-size: 13.5px !important;
+    line-height: 1.4 !important;
+    color: #e6edf3 !important;
+}
+
+.r1 {color: #38bdf8; text-decoration-color: #38bdf8; font-weight: bold}
+.r2 {color: #38bdf8; text-decoration-color: #38bdf8; font-weight: bold; text-decoration: underline}
+.r3 {color: #4ade80; text-decoration-color: #4ade80; font-weight: bold}
+.r4 {color: #4ade80; text-decoration-color: #4ade80}
+.r5 {color: #94a3b8; text-decoration-color: #94a3b8}
+.r6 {color: #94a3b8; text-decoration-color: #94a3b8; font-weight: bold}
+.r7 {color: #38bdf8; text-decoration-color: #38bdf8; font-weight: bold}
+.r8 {color: #fbbf24; text-decoration-color: #fbbf24}
+.r9 {color: #fbbf24; text-decoration-color: #fbbf24; font-weight: bold}
+</style>
+</head>
+<body>
+<div class="terminal-window">
+    <div class="terminal-header">
+        <div class="buttons">
+            <span class="btn red"></span>
+            <span class="btn yellow"></span>
+            <span class="btn green"></span>
+        </div>
+        <div class="title">sentinel metrics & health endpoints (9090)</div>
+    </div>
+    <div class="terminal-body">
+        <pre style="font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><code style="font-family:inherit"><span class="r1">$ curl -s </span><span class="r2">http://127.0.0.1:9090/healthz</span><span class="r1"> | jq .</span>
+<span class="r3">{</span>
+<span class="r4">  </span><span class="r4">&quot;status&quot;</span><span class="r4">: </span><span class="r4">&quot;healthy&quot;</span><span class="r4">,</span>
+<span class="r4">  </span><span class="r4">&quot;timestamp&quot;</span><span class="r4">: </span><span class="r4">&quot;2026-09-08T22:37:06.445542+00:00&quot;</span><span class="r4">,</span>
+<span class="r4">  </span><span class="r4">&quot;total_targets&quot;</span><span class="r4">: </span><span class="r3">2</span><span class="r4">,</span>
+<span class="r4">  </span><span class="r4">&quot;healthy_targets&quot;</span><span class="r4">: </span><span class="r3">2</span><span class="r4">,</span>
+<span class="r4">  </span><span class="r4">&quot;targets&quot;</span><span class="r4">: </span><span class="r3">{</span>
+<span class="r4">    </span><span class="r4">&quot;Production API Health&quot;</span><span class="r4">: </span><span class="r3">{</span>
+<span class="r4">      </span><span class="r4">&quot;url&quot;</span><span class="r4">: </span><span class="r4">&quot;https://api.example.com/health&quot;</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;status&quot;</span><span class="r4">: </span><span class="r4">&quot;UP&quot;</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;latency_ms&quot;</span><span class="r4">: </span><span class="r3">0.0</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;uptime_percentage&quot;</span><span class="r4">: </span><span class="r3">100.0</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;consecutive_failures&quot;</span><span class="r4">: </span><span class="r3">0</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;last_error&quot;</span><span class="r4">: null</span>
+<span class="r4">    </span><span class="r3">}</span><span class="r4">,</span>
+<span class="r4">    </span><span class="r4">&quot;Landing Page&quot;</span><span class="r4">: </span><span class="r3">{</span>
+<span class="r4">      </span><span class="r4">&quot;url&quot;</span><span class="r4">: </span><span class="r4">&quot;https://example.com&quot;</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;status&quot;</span><span class="r4">: </span><span class="r4">&quot;UP&quot;</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;latency_ms&quot;</span><span class="r4">: </span><span class="r3">0.0</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;uptime_percentage&quot;</span><span class="r4">: </span><span class="r3">100.0</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;consecutive_failures&quot;</span><span class="r4">: </span><span class="r3">0</span><span class="r4">,</span>
+<span class="r4">      </span><span class="r4">&quot;last_error&quot;</span><span class="r4">: null</span>
+<span class="r4">    </span><span class="r3">}</span>
+<span class="r4">  </span><span class="r3">}</span>
+<span class="r3">}</span>
+
+<span class="r1">$ curl -s </span><span class="r2">http://127.0.0.1:9090/metrics</span><span class="r1"> | grep -E </span><span class="r1">&#x27;^#|sentinel_&#x27;</span><span class="r1"> | head -n </span><span class="r1">12</span>
+<span class="r5"># HELP sentinel_target_up Target operational status </span><span class="r6">(</span><span class="r7">1</span><span class="r5"> = UP, </span><span class="r7">0</span><span class="r5"> = DOWN</span><span class="r6">)</span>
+<span class="r5"># TYPE sentinel_target_up gauge</span>
+<span class="r4">sentinel_target_up</span><span class="r3">{</span><span class="r4">target</span><span class="r4">=</span><span class="r4">&quot;Production API Health&quot;</span><span class="r3">}</span><span class="r4"> </span><span class="r3">1</span>
+<span class="r4">sentinel_target_up</span><span class="r3">{</span><span class="r4">target</span><span class="r4">=</span><span class="r4">&quot;Landing Page&quot;</span><span class="r3">}</span><span class="r4"> </span><span class="r3">1</span>
+
+<span class="r5"># HELP sentinel_target_latency_seconds Round-trip latency in seconds</span>
+<span class="r5"># TYPE sentinel_target_latency_seconds gauge</span>
+<span class="r8">sentinel_target_latency_seconds</span><span class="r9">{</span><span class="r8">target</span><span class="r8">=</span><span class="r8">&quot;Production API Health&quot;</span><span class="r9">}</span><span class="r8"> </span><span class="r9">0.000000</span>
+<span class="r8">sentinel_target_latency_seconds</span><span class="r9">{</span><span class="r8">target</span><span class="r8">=</span><span class="r8">&quot;Landing Page&quot;</span><span class="r9">}</span><span class="r8"> </span><span class="r9">0.000000</span>
+
+<span class="r5"># HELP sentinel_target_consecutive_failures Number of consecutive failures</span>
+<span class="r5"># TYPE sentinel_target_consecutive_failures gauge</span>
+</code></pre>
+    </div>
+</div>
+</body>
+</html>

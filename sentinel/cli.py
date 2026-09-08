@@ -63,9 +63,9 @@ class ConfigReportPresenter:
         table = Table(title="Configured Targets", show_header=True, header_style="bold magenta")
         table.add_column("Type", style="yellow", width=5)
         table.add_column("Target Name", style="cyan")
-        table.add_column("Endpoint")
-        table.add_column("Interval", justify="right")
-        table.add_column("Expectation Rules")
+        table.add_column("Endpoint", style="bright_white")
+        table.add_column("Interval", style="green", justify="right")
+        table.add_column("Expectation Rules", style="magenta")
 
         for t in cfg.targets:
             rules: list[str] = []
