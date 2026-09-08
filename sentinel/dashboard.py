@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from rich.align import Align
-from rich.console import Group
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
@@ -19,17 +17,29 @@ if TYPE_CHECKING:
     from sentinel.engine import SentinelEngine
 
 
+class LatencyBarRenderer:
+    """Renders colored spark/meter latency bars for terminal presentation."""
+
+    BAR_CHARS = " ▂▃▄▅▆▇█"
+
+    @classmethod
+    def render_bar(cls, latency_ms: float, max_scale: float = 1000.0) -> str:
+        """Render a text latency indicator with color coding."""
+        ratio = min(1.0, max(0.0, latency_ms / max_scale))
+        blocks = int(ratio * (len(cls.BAR_CHARS) - 1))
+        char = cls.BAR_CHARS[min(blocks, len(cls.BAR_CHARS) - 1)]
+
+        rounded_ms = int(latency_ms)
+        if latency_ms < 200:
+            return f"[green]{char} {rounded_ms}ms[/green]"
+        if latency_ms < 600:
+            return f"[yellow]{char} {rounded_ms}ms[/yellow]"
+        return f"[red]{char} {rounded_ms}ms[/red]"
+
+
 def _get_latency_bar(latency_ms: float, max_scale: float = 1000.0) -> str:
-    """Render a text latency indicator."""
-    ratio = min(1.0, latency_ms / max_scale)
-    blocks = int(ratio * 8)
-    chars = " ▂▃▄▅▆▇█"
-    char = chars[min(blocks, len(chars) - 1)]
-    if latency_ms < 200:
-        return f"[green]{char} {int(latency_ms)}ms[/green]"
-    if latency_ms < 600:
-        return f"[yellow]{char} {int(latency_ms)}ms[/yellow]"
-    return f"[red]{char} {int(latency_ms)}ms[/red]"
+    """Backward-compatible helper function delegating to LatencyBarRenderer."""
+    return LatencyBarRenderer.render_bar(latency_ms, max_scale)
 
 
 class SentinelDashboard:
@@ -41,13 +51,14 @@ class SentinelDashboard:
         self.events: list[tuple[str, str, str]] = []  # (timestamp, level, message)
 
     def record_event(self, level: str, message: str) -> None:
-        """Add an event to the recent event log."""
+        """Add an event to the recent event log, maintaining a maximum history."""
         ts = datetime.now().strftime("%H:%M:%S")
         self.events.append((ts, level, message))
         if len(self.events) > 8:
             self.events.pop(0)
 
     def _render_header(self) -> Panel:
+        """Render the top status bar with daemon uptime and channel health."""
         elapsed = format_duration(time.time() - self.start_time)
         states = list(self.engine.states.values())
         total = len(states)
@@ -69,13 +80,17 @@ class SentinelDashboard:
         text = Text()
         text.append("🛡️  SENTINEL MONITORING DAEMON", style="bold cyan")
         text.append(f"  |  Uptime: {elapsed}", style="dim")
-        text.append(f"  |  Services: {healthy}/{total} Healthy", style="green" if healthy == total else "yellow")
+        text.append(
+            f"  |  Services: {healthy}/{total} Healthy",
+            style="green" if healthy == total else "yellow",
+        )
         text.append(f"  |  Avg Uptime: {avg_uptime:.1f}%", style="cyan")
         text.append(f"  |  Alert Channels: {channel_str}", style="dim")
 
         return Panel(text, style="blue")
 
     def _render_targets_table(self) -> Table:
+        """Render the real-time matrix of monitored endpoints."""
         table = Table(expand=True, show_header=True, header_style="bold magenta")
         table.add_column("Target", style="cyan", ratio=2)
         table.add_column("Status", justify="center", width=8)
@@ -93,7 +108,7 @@ class SentinelDashboard:
             else:
                 status = "[yellow]CHECK[/yellow]"
 
-            lat_bar = _get_latency_bar(state.last_latency_ms)
+            lat_bar = LatencyBarRenderer.render_bar(state.last_latency_ms)
             avg_lat = f"{int(state.average_latency_ms)}ms"
             uptime_str = f"{state.uptime_percentage:.1f}%"
             fails_str = str(state.consecutive_failures)
@@ -115,6 +130,7 @@ class SentinelDashboard:
         return table
 
     def _render_event_log(self) -> Panel:
+        """Render recent outage and recovery notifications."""
         table = Table(expand=True, show_header=False, box=None)
         table.add_column("Time", width=10, style="dim")
         table.add_column("Event")

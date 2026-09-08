@@ -1,8 +1,9 @@
-"""Telegram notification client with HTML templating and retry handling."""
+"""Notification providers, alert transports, and multi-channel alert dispatching."""
 
 from __future__ import annotations
 
 import asyncio
+from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 import html
 import logging
@@ -10,19 +11,122 @@ from typing import Any
 
 import httpx
 
-from sentinel.config import TelegramConfig
+from sentinel.config import DiscordConfig, SlackConfig, TelegramConfig, WebhookConfig
 from sentinel.state import TargetState, format_duration
 
 
 logger = logging.getLogger("sentinel.notifier")
 
 
-class TelegramNotifier:
+class HttpAlertTransport:
+    """Reusable HTTP transport for delivering notification payloads with retries and exponential backoff."""
+
+    @staticmethod
+    async def post_json(
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        max_retries: int = 3,
+        channel_name: str = "Webhook",
+    ) -> bool:
+        """Send a JSON POST request with retry attempts and exponential backoff.
+
+        Instantiates httpx.AsyncClient per delivery to allow clean mocking in tests
+        and isolation across asynchronous tasks.
+        """
+        req_headers = {"Content-Type": "application/json"}
+        if headers:
+            req_headers.update(headers)
+
+        delay = 1.0
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = await client.post(url, json=payload, headers=req_headers)
+                    if response.is_success:
+                        return True
+
+                    error_desc = ""
+                    try:
+                        data = response.json()
+                        error_desc = data.get("description", response.text)
+                    except Exception:
+                        error_desc = response.text
+
+                    logger.warning(
+                        "%s API error (attempt %d/%d): status %d - %s",
+                        channel_name,
+                        attempt,
+                        max_retries,
+                        response.status_code,
+                        error_desc,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Network error delivering %s notification (attempt %d/%d): %s",
+                        channel_name,
+                        attempt,
+                        max_retries,
+                        exc,
+                    )
+
+                if attempt < max_retries:
+                    await asyncio.sleep(delay)
+                    delay *= 2.0
+
+        return False
+
+
+class BaseNotifier(ABC):
+    """Abstract interface defining required behaviors for an alert delivery channel."""
+
+    @property
+    @abstractmethod
+    def is_configured(self) -> bool:
+        """Return True if channel credentials and endpoints are validly configured."""
+
+    @abstractmethod
+    async def send_outage_alert(
+        self,
+        state: TargetState,
+        debounce_threshold: int,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        """Deliver service outage notification."""
+
+    @abstractmethod
+    async def send_recovery_alert(
+        self,
+        state: TargetState,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        """Deliver service recovery notification."""
+
+    @abstractmethod
+    async def send_test_alert(self) -> bool:
+        """Deliver a verification test alert to confirm channel connectivity."""
+
+    @abstractmethod
+    async def send_daily_summary(
+        self,
+        states: list[TargetState],
+        timestamp: datetime | None = None,
+    ) -> bool:
+        """Deliver daily aggregated uptime and health summary."""
+
+
+class TelegramNotifier(BaseNotifier):
     """Delivers formatted monitoring alerts via Telegram Bot API."""
 
     def __init__(self, config: TelegramConfig | None = None) -> None:
         self.config = config or TelegramConfig()
         self._api_base = f"https://api.telegram.org/bot{self.config.bot_token or ''}"
+
+    @property
+    def is_configured(self) -> bool:
+        """Return True if Telegram bot token and chat ID are configured."""
+        return self.config.is_configured
 
     async def send_message(
         self,
@@ -31,7 +135,7 @@ class TelegramNotifier:
         max_retries: int = 3,
     ) -> bool:
         """Send an HTML-formatted message to the configured Telegram chat."""
-        if not self.config.is_configured:
+        if not self.is_configured:
             logger.debug("Telegram is not configured; skipping notification.")
             return False
 
@@ -44,36 +148,12 @@ class TelegramNotifier:
             "disable_notification": disable_notification,
         }
 
-        delay = 1.0
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    response = await client.post(url, json=payload)
-                    if response.is_success:
-                        return True
-
-                    data = response.json()
-                    desc = data.get("description", response.text)
-                    logger.warning(
-                        "Telegram API error (attempt %d/%d): %s %s",
-                        attempt,
-                        max_retries,
-                        response.status_code,
-                        desc,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Network error delivering Telegram message (attempt %d/%d): %s",
-                        attempt,
-                        max_retries,
-                        exc,
-                    )
-
-                if attempt < max_retries:
-                    await asyncio.sleep(delay)
-                    delay *= 2.0
-
-        return False
+        return await HttpAlertTransport.post_json(
+            url=url,
+            payload=payload,
+            max_retries=max_retries,
+            channel_name="Telegram",
+        )
 
     async def send_outage_alert(
         self,
@@ -188,77 +268,127 @@ class TelegramNotifier:
         return await self.send_message(message, disable_notification=self.config.send_silently)
 
 
-class WebhookNotifier:
+class WebhookNotifier(BaseNotifier):
     """Delivers structured JSON alerts to generic HTTP webhooks."""
 
-    def __init__(self, config: Any) -> None:
-        self.config = config
+    def __init__(self, config: WebhookConfig | Any | None = None) -> None:
+        self.config = config or WebhookConfig()
+
+    @property
+    def is_configured(self) -> bool:
+        """Return True if Webhook destination URL is configured."""
+        return getattr(self.config, "is_configured", False)
 
     async def send_webhook(
         self,
         payload: dict[str, Any],
         max_retries: int = 3,
     ) -> bool:
-        if not getattr(self.config, "is_configured", False):
+        """Deliver generic JSON payload to webhook URL."""
+        if not self.is_configured:
             return False
 
-        url = self.config.url
-        headers = {"Content-Type": "application/json", **self.config.headers}
-        delay = 1.0
+        return await HttpAlertTransport.post_json(
+            url=self.config.url,
+            payload=payload,
+            headers=getattr(self.config, "headers", None),
+            max_retries=max_retries,
+            channel_name="Webhook",
+        )
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    response = await client.post(url, json=payload, headers=headers)
-                    if response.is_success:
-                        return True
-                    logger.warning(
-                        "Webhook returned status %d on attempt %d/%d",
-                        response.status_code,
-                        attempt,
-                        max_retries,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Webhook delivery error (attempt %d/%d): %s",
-                        attempt,
-                        max_retries,
-                        exc,
-                    )
+    async def send_outage_alert(
+        self,
+        state: TargetState,
+        debounce_threshold: int,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        payload = {
+            "event": "outage",
+            "target": state.name,
+            "url": state.url,
+            "status_code": state.last_status_code,
+            "status_phrase": state.last_status_phrase,
+            "latency_ms": state.last_latency_ms,
+            "error_reason": state.last_error_reason,
+            "consecutive_failures": state.consecutive_failures,
+            "timestamp": ts.isoformat(),
+        }
+        return await self.send_webhook(payload)
 
-                if attempt < max_retries:
-                    await asyncio.sleep(delay)
-                    delay *= 2.0
+    async def send_recovery_alert(
+        self,
+        state: TargetState,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        payload = {
+            "event": "recovery",
+            "target": state.name,
+            "url": state.url,
+            "status_code": state.last_status_code,
+            "latency_ms": state.last_latency_ms,
+            "downtime_seconds": state.previous_downtime_seconds,
+            "downtime_duration": format_duration(state.previous_downtime_seconds),
+            "timestamp": ts.isoformat(),
+        }
+        return await self.send_webhook(payload)
 
-        return False
+    async def send_test_alert(self) -> bool:
+        payload = {
+            "event": "test",
+            "message": "Sentinel alert delivery verified",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return await self.send_webhook(payload)
+
+    async def send_daily_summary(
+        self,
+        states: list[TargetState],
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        payload = {
+            "event": "daily_summary",
+            "total_targets": len(states),
+            "healthy_targets": sum(1 for s in states if s.status.value == "UP"),
+            "targets": [
+                {
+                    "name": s.name,
+                    "url": s.url,
+                    "status": s.status.value,
+                    "uptime_percentage": s.uptime_percentage,
+                    "average_latency_ms": s.average_latency_ms,
+                }
+                for s in states
+            ],
+            "timestamp": ts.isoformat(),
+        }
+        return await self.send_webhook(payload)
 
 
-class DiscordNotifier:
+class DiscordNotifier(BaseNotifier):
     """Delivers rich embed alerts to Discord webhooks."""
 
-    def __init__(self, config: Any) -> None:
-        self.config = config
+    def __init__(self, config: DiscordConfig | Any | None = None) -> None:
+        self.config = config or DiscordConfig()
+
+    @property
+    def is_configured(self) -> bool:
+        """Return True if Discord webhook URL is configured."""
+        return getattr(self.config, "is_configured", False)
 
     async def send_message(self, payload: dict[str, Any], max_retries: int = 3) -> bool:
-        if not getattr(self.config, "is_configured", False):
+        """Send embed payload to Discord incoming webhook."""
+        if not self.is_configured:
             return False
 
-        url = self.config.webhook_url
-        delay = 1.0
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    res = await client.post(url, json=payload)
-                    if res.is_success:
-                        return True
-                    logger.warning("Discord webhook returned status %d", res.status_code)
-                except Exception as exc:
-                    logger.warning("Discord delivery error: %s", exc)
-
-                if attempt < max_retries:
-                    await asyncio.sleep(delay)
-                    delay *= 2.0
-        return False
+        return await HttpAlertTransport.post_json(
+            url=self.config.webhook_url,
+            payload=payload,
+            max_retries=max_retries,
+            channel_name="Discord",
+        )
 
     async def send_outage_alert(
         self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
@@ -347,32 +477,28 @@ class DiscordNotifier:
         return await self.send_message(payload)
 
 
-class SlackNotifier:
+class SlackNotifier(BaseNotifier):
     """Delivers Block Kit alerts to Slack incoming webhooks."""
 
-    def __init__(self, config: Any) -> None:
-        self.config = config
+    def __init__(self, config: SlackConfig | Any | None = None) -> None:
+        self.config = config or SlackConfig()
+
+    @property
+    def is_configured(self) -> bool:
+        """Return True if Slack webhook URL is configured."""
+        return getattr(self.config, "is_configured", False)
 
     async def send_message(self, payload: dict[str, Any], max_retries: int = 3) -> bool:
-        if not getattr(self.config, "is_configured", False):
+        """Send message payload to Slack webhook."""
+        if not self.is_configured:
             return False
 
-        url = self.config.webhook_url
-        delay = 1.0
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    res = await client.post(url, json=payload)
-                    if res.is_success:
-                        return True
-                    logger.warning("Slack webhook returned status %d", res.status_code)
-                except Exception as exc:
-                    logger.warning("Slack delivery error: %s", exc)
-
-                if attempt < max_retries:
-                    await asyncio.sleep(delay)
-                    delay *= 2.0
-        return False
+        return await HttpAlertTransport.post_json(
+            url=self.config.webhook_url,
+            payload=payload,
+            max_retries=max_retries,
+            channel_name="Slack",
+        )
 
     async def send_outage_alert(
         self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
@@ -459,13 +585,13 @@ class SlackNotifier:
         return await self.send_message(payload)
 
 
-class AlertDispatcher:
-    """Coordinates notifications across all configured channels."""
+class AlertDispatcher(BaseNotifier):
+    """Composite notifier coordinating notifications across all configured alerting channels."""
 
     def __init__(
         self,
-        telegram_cfg: Any,
-        webhook_cfg: Any,
+        telegram_cfg: Any = None,
+        webhook_cfg: Any = None,
         discord_cfg: Any = None,
         slack_cfg: Any = None,
     ) -> None:
@@ -473,15 +599,21 @@ class AlertDispatcher:
         self.webhook = WebhookNotifier(webhook_cfg)
         self.discord = DiscordNotifier(discord_cfg)
         self.slack = SlackNotifier(slack_cfg)
+        self._channels: list[BaseNotifier] = [
+            self.telegram,
+            self.webhook,
+            self.discord,
+            self.slack,
+        ]
+
+    def register(self, channel: BaseNotifier) -> None:
+        """Register an additional notifier channel."""
+        self._channels.append(channel)
 
     @property
     def is_configured(self) -> bool:
-        return (
-            self.telegram.config.is_configured
-            or self.webhook.config.is_configured
-            or self.discord.config.is_configured
-            or self.slack.config.is_configured
-        )
+        """Return True if at least one alerting channel is configured."""
+        return any(channel.is_configured for channel in self._channels)
 
     async def send_outage_alert(
         self,
@@ -489,22 +621,14 @@ class AlertDispatcher:
         debounce_threshold: int,
         timestamp: datetime | None = None,
     ) -> bool:
+        """Dispatch outage alerts in parallel to all active notification channels."""
         ts = timestamp or datetime.now(timezone.utc)
         results = await asyncio.gather(
-            self.telegram.send_outage_alert(state, debounce_threshold, ts),
-            self.webhook.send_webhook({
-                "event": "outage",
-                "target": state.name,
-                "url": state.url,
-                "status_code": state.last_status_code,
-                "status_phrase": state.last_status_phrase,
-                "latency_ms": state.last_latency_ms,
-                "error_reason": state.last_error_reason,
-                "consecutive_failures": state.consecutive_failures,
-                "timestamp": ts.isoformat(),
-            }),
-            self.discord.send_outage_alert(state, debounce_threshold, ts),
-            self.slack.send_outage_alert(state, debounce_threshold, ts),
+            *(
+                channel.send_outage_alert(state, debounce_threshold, ts)
+                for channel in self._channels
+                if channel.is_configured
+            ),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -514,35 +638,26 @@ class AlertDispatcher:
         state: TargetState,
         timestamp: datetime | None = None,
     ) -> bool:
+        """Dispatch recovery alerts in parallel to all active notification channels."""
         ts = timestamp or datetime.now(timezone.utc)
         results = await asyncio.gather(
-            self.telegram.send_recovery_alert(state, ts),
-            self.webhook.send_webhook({
-                "event": "recovery",
-                "target": state.name,
-                "url": state.url,
-                "status_code": state.last_status_code,
-                "latency_ms": state.last_latency_ms,
-                "downtime_seconds": state.previous_downtime_seconds,
-                "downtime_duration": format_duration(state.previous_downtime_seconds),
-                "timestamp": ts.isoformat(),
-            }),
-            self.discord.send_recovery_alert(state, ts),
-            self.slack.send_recovery_alert(state, ts),
+            *(
+                channel.send_recovery_alert(state, ts)
+                for channel in self._channels
+                if channel.is_configured
+            ),
             return_exceptions=True,
         )
         return any(r is True for r in results)
 
     async def send_test_alert(self) -> bool:
+        """Dispatch test verification alerts in parallel to all configured channels."""
         results = await asyncio.gather(
-            self.telegram.send_test_alert(),
-            self.webhook.send_webhook({
-                "event": "test",
-                "message": "Sentinel alert delivery verified",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }),
-            self.discord.send_test_alert(),
-            self.slack.send_test_alert(),
+            *(
+                channel.send_test_alert()
+                for channel in self._channels
+                if channel.is_configured
+            ),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -552,27 +667,14 @@ class AlertDispatcher:
         states: list[TargetState],
         timestamp: datetime | None = None,
     ) -> bool:
+        """Dispatch daily health summary reports in parallel to all configured channels."""
         ts = timestamp or datetime.now(timezone.utc)
         results = await asyncio.gather(
-            self.telegram.send_daily_summary(states, ts),
-            self.webhook.send_webhook({
-                "event": "daily_summary",
-                "total_targets": len(states),
-                "healthy_targets": sum(1 for s in states if s.status.value == "UP"),
-                "targets": [
-                    {
-                        "name": s.name,
-                        "url": s.url,
-                        "status": s.status.value,
-                        "uptime_percentage": s.uptime_percentage,
-                        "average_latency_ms": s.average_latency_ms,
-                    }
-                    for s in states
-                ],
-                "timestamp": ts.isoformat(),
-            }),
-            self.discord.send_daily_summary(states, ts),
-            self.slack.send_daily_summary(states, ts),
+            *(
+                channel.send_daily_summary(states, ts)
+                for channel in self._channels
+                if channel.is_configured
+            ),
             return_exceptions=True,
         )
         return any(r is True for r in results)

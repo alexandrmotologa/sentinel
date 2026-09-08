@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -18,8 +18,8 @@ _DURATION_PATTERN = re.compile(
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z0-9_]+)(?::-([^}]*))?\}")
 
 
-def parse_duration(value: Union[str, int, float]) -> float:
-    """Parse duration into seconds.
+def parse_duration(value: str | int | float) -> float:
+    """Parse a human-friendly duration string or numeric seconds into float seconds.
 
     Supports raw numbers or strings like '500ms', '30s', '5m', '2h', '1d'.
     """
@@ -34,32 +34,28 @@ def parse_duration(value: Union[str, int, float]) -> float:
     amount = float(match.group("value"))
     unit = (match.group("unit") or "s").lower()
 
-    if unit == "ms":
-        return amount / 1000.0
-    if unit == "s":
-        return amount
-    if unit == "m":
-        return amount * 60.0
-    if unit == "h":
-        return amount * 3600.0
-    if unit == "d":
-        return amount * 86400.0
-
-    return amount
+    multipliers: dict[str, float] = {
+        "ms": 0.001,
+        "s": 1.0,
+        "m": 60.0,
+        "h": 3600.0,
+        "d": 86400.0,
+    }
+    return amount * multipliers.get(unit, 1.0)
 
 
 def resolve_env_strings(val: Any) -> Any:
-    """Recursively resolve environment variable references in config values.
+    """Recursively resolve environment variable references in configuration structures.
 
     Handles 'env:VAR_NAME' prefix and '${VAR_NAME:-default}' placeholders.
     """
     if isinstance(val, str):
-        # Check prefix format: env:VAR_NAME
+        # Prefix format: env:VAR_NAME
         if val.startswith("env:"):
             env_key = val[4:].strip()
             return os.environ.get(env_key, "")
 
-        # Check placeholder format: ${VAR:-default}
+        # Placeholder format: ${VAR:-default}
         def _replace_placeholder(match: re.Match[str]) -> str:
             var_name = match.group(1)
             default_val = match.group(2) if match.group(2) is not None else ""
@@ -75,7 +71,7 @@ def resolve_env_strings(val: Any) -> Any:
 
 
 class GlobalConfig(BaseModel):
-    """Global daemon settings."""
+    """Global monitoring daemon parameters."""
 
     default_interval: float = Field(default=60.0, description="Default check interval in seconds")
     default_timeout: float = Field(default=10.0, description="Default request timeout in seconds")
@@ -113,15 +109,16 @@ class GlobalConfig(BaseModel):
 
 
 class TelegramConfig(BaseModel):
-    """Telegram alerting configuration."""
+    """Telegram alerting channel configuration."""
 
     bot_token: str = Field(default="", description="Telegram Bot API token")
     chat_id: str = Field(default="", description="Telegram chat ID for alerts")
-    send_silently: bool = Field(default=False, description="Send notifications without sound")
+    send_silently: bool = Field(default=False, description="Send notifications without audible chime")
     enabled: bool = Field(default=True, description="Enable Telegram notifications")
 
     @property
     def is_configured(self) -> bool:
+        """Return True if Telegram alert parameters are present and active."""
         return bool(self.enabled and self.bot_token.strip() and self.chat_id.strip())
 
 
@@ -129,16 +126,19 @@ class WebhookConfig(BaseModel):
     """Generic HTTP webhook alerting configuration."""
 
     url: str = Field(default="", description="Webhook destination URL for JSON payloads")
-    headers: dict[str, str] = Field(default_factory=dict, description="Custom HTTP headers for webhook POST")
+    headers: dict[str, str] = Field(
+        default_factory=dict, description="Custom HTTP headers for webhook POST"
+    )
     enabled: bool = Field(default=True, description="Enable webhook notifications")
 
     @property
     def is_configured(self) -> bool:
+        """Return True if generic webhook destination is set and active."""
         return bool(self.enabled and self.url.strip())
 
 
 class DiscordConfig(BaseModel):
-    """Discord webhook alerting configuration."""
+    """Discord incoming webhook configuration."""
 
     webhook_url: str = Field(default="", description="Discord webhook URL")
     username: str = Field(default="Sentinel", description="Bot username shown in Discord")
@@ -147,11 +147,12 @@ class DiscordConfig(BaseModel):
 
     @property
     def is_configured(self) -> bool:
+        """Return True if Discord webhook URL is populated and enabled."""
         return bool(self.enabled and self.webhook_url.strip())
 
 
 class SlackConfig(BaseModel):
-    """Slack incoming webhook alerting configuration."""
+    """Slack incoming webhook configuration."""
 
     webhook_url: str = Field(default="", description="Slack incoming webhook URL")
     channel: str = Field(default="", description="Optional Slack channel override")
@@ -159,6 +160,7 @@ class SlackConfig(BaseModel):
 
     @property
     def is_configured(self) -> bool:
+        """Return True if Slack webhook URL is populated and enabled."""
         return bool(self.enabled and self.webhook_url.strip())
 
 
@@ -170,39 +172,44 @@ class MetricsConfig(BaseModel):
     port: int = Field(default=9090, description="Bind port for HTTP server")
 
 
-class TCPTargetConfig(BaseModel):
-    """TCP socket connection monitoring target."""
+class BaseTargetConfig(BaseModel):
+    """Abstract base configuration for any monitored target."""
 
-    name: str = Field(..., description="Descriptive target name")
-    host: str = Field(..., description="Target hostname or IP address")
-    port: int = Field(..., ge=1, le=65535, description="Target TCP port")
+    name: str = Field(..., description="Descriptive unique target name")
     interval: float | None = Field(
-        default=None, description="Check interval (overrides global default)"
+        default=None, description="Check interval in seconds (overrides global default)"
     )
     timeout: float | None = Field(
-        default=None, description="Connection timeout (overrides global default)"
+        default=None, description="Connection timeout in seconds (overrides global default)"
     )
 
     @field_validator("interval", "timeout", mode="before")
     @classmethod
-    def _validate_durations(cls, v: Any) -> float | None:
+    def _validate_base_durations(cls, v: Any) -> float | None:
         if v is None:
             return None
         return parse_duration(v)
 
 
+class TCPTargetConfig(BaseTargetConfig):
+    """TCP socket connection monitoring target."""
+
+    host: str = Field(..., description="Target hostname or IP address")
+    port: int = Field(..., ge=1, le=65535, description="Target TCP port")
+
+
 class ExpectConfig(BaseModel):
-    """Assertions required for a health check to pass."""
+    """Assertions required for an HTTP health check to pass."""
 
     model_config = {"populate_by_name": True}
 
-    status_code: Union[int, list[int], str, None] = Field(
+    status_code: int | list[int] | str | None = Field(
         default=200,
         description="Expected HTTP status code, list of codes, or range string like '200-299'",
     )
     max_latency_ms: float | None = Field(
         default=None,
-        description="Maximum allowed latency in milliseconds",
+        description="Maximum allowed round-trip latency in milliseconds",
     )
     contains_text: str | None = Field(
         default=None,
@@ -228,31 +235,15 @@ class ExpectConfig(BaseModel):
     )
 
 
-class TargetConfig(BaseModel):
-    """Monitored endpoint target."""
+class TargetConfig(BaseTargetConfig):
+    """Monitored HTTP endpoint target."""
 
-    name: str = Field(..., description="Descriptive target name")
     url: str = Field(..., description="Target URL")
-    interval: float | None = Field(
-        default=None,
-        description="Target check interval (overrides global default)",
-    )
-    timeout: float | None = Field(
-        default=None,
-        description="Target check timeout (overrides global default)",
-    )
-    method: str = Field(default="GET", description="HTTP method")
+    method: str = Field(default="GET", description="HTTP request method")
     headers: dict[str, str] = Field(default_factory=dict, description="Custom HTTP headers")
     body: str | None = Field(default=None, description="Request body for POST/PUT/PATCH")
     follow_redirects: bool = Field(default=True, description="Follow HTTP redirects")
     expect: ExpectConfig = Field(default_factory=ExpectConfig, description="Health expectations")
-
-    @field_validator("interval", "timeout", mode="before")
-    @classmethod
-    def _validate_target_durations(cls, v: Any) -> float | None:
-        if v is None:
-            return None
-        return parse_duration(v)
 
     @field_validator("method")
     @classmethod
@@ -261,7 +252,7 @@ class TargetConfig(BaseModel):
 
 
 class SentinelConfig(BaseModel):
-    """Top-level Sentinel configuration file schema."""
+    """Top-level Sentinel daemon configuration schema."""
 
     model_config = {"populate_by_name": True}
 
@@ -276,6 +267,7 @@ class SentinelConfig(BaseModel):
 
     @model_validator(mode="after")
     def _apply_global_defaults(self) -> SentinelConfig:
+        """Cascade global interval and timeout defaults to targets that omit them."""
         for target in self.targets:
             if target.interval is None:
                 target.interval = self.global_config.default_interval
@@ -289,7 +281,8 @@ class SentinelConfig(BaseModel):
         return self
 
     @classmethod
-    def load_yaml(cls, path: Union[str, Path]) -> SentinelConfig:
+    def load_yaml(cls, path: str | Path) -> SentinelConfig:
+        """Load and validate Sentinel configuration from a YAML file with env interpolation."""
         file_path = Path(path)
         if not file_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {file_path}")

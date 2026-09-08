@@ -9,16 +9,16 @@ import os
 from pathlib import Path
 import tempfile
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import httpx
 from rich.console import Console
 
 from sentinel.config import SentinelConfig, TargetConfig, TCPTargetConfig
-from sentinel.evaluator import create_async_client, evaluate_target, evaluate_tcp_target
+from sentinel.evaluator import BaseProbe, HttpProbe, TcpProbe, create_async_client
 from sentinel.notifier import AlertDispatcher
 from sentinel.server import MetricsServer
-from sentinel.state import TargetState, TargetStatus
+from sentinel.state import TargetState
 
 if TYPE_CHECKING:
     from sentinel.dashboard import SentinelDashboard
@@ -28,42 +28,158 @@ logger = logging.getLogger("sentinel.engine")
 console = Console()
 
 
+class HeartbeatService:
+    """Encapsulates daemon liveness heartbeat file operations."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        self._path = path
+
+    def get_path(self) -> Path:
+        """Return the filesystem path for the daemon heartbeat file."""
+        if self._path is not None:
+            return self._path
+        override = os.environ.get("SENTINEL_HEARTBEAT_PATH")
+        if override:
+            return Path(override)
+        temp_dir = Path(tempfile.gettempdir())
+        return temp_dir / "sentinel.heartbeat"
+
+    def write(self) -> None:
+        """Touch the heartbeat file with current unix timestamp."""
+        try:
+            path = self.get_path()
+            path.write_text(str(time.time()), encoding="utf-8")
+        except Exception as exc:
+            logger.debug("Failed writing heartbeat: %s", exc)
+
+    def is_healthy(self, max_age_seconds: float = 120.0) -> bool:
+        """Check if the heartbeat file was refreshed within max_age_seconds."""
+        path = self.get_path()
+        if not path.exists():
+            return False
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+            last_beat = float(content)
+            return (time.time() - last_beat) <= max_age_seconds
+        except Exception:
+            return False
+
+
+# Default module-level singleton instance for backward compatibility
+default_heartbeat = HeartbeatService()
+
+
 def get_heartbeat_path() -> Path:
     """Return the system path for the daemon heartbeat probe."""
-    override = os.environ.get("SENTINEL_HEARTBEAT_PATH")
-    if override:
-        return Path(override)
-    temp_dir = Path(tempfile.gettempdir())
-    return temp_dir / "sentinel.heartbeat"
+    return default_heartbeat.get_path()
 
 
 def write_heartbeat() -> None:
     """Touch the heartbeat file with current unix timestamp."""
-    try:
-        path = get_heartbeat_path()
-        path.write_text(str(time.time()), encoding="utf-8")
-    except Exception as exc:
-        logger.debug("Failed writing heartbeat: %s", exc)
+    default_heartbeat.write()
 
 
 def is_daemon_healthy(max_age_seconds: float = 120.0) -> bool:
     """Check if the heartbeat file was updated within max_age_seconds."""
-    path = get_heartbeat_path()
-    if not path.exists():
-        return False
-    try:
-        content = path.read_text(encoding="utf-8").strip()
-        last_beat = float(content)
-        return (time.time() - last_beat) <= max_age_seconds
-    except Exception:
-        return False
+    return default_heartbeat.is_healthy(max_age_seconds)
+
+
+class TargetWorker:
+    """Manages the periodic execution lifecycle of a single target's probe."""
+
+    def __init__(
+        self,
+        name: str,
+        probe: BaseProbe,
+        state: TargetState,
+        interval: float,
+        debounce_threshold: int,
+        notifier: AlertDispatcher,
+        stop_event: asyncio.Event,
+        heartbeat: HeartbeatService = default_heartbeat,
+        dashboard: SentinelDashboard | None = None,
+        is_tcp: bool = False,
+        display_endpoint: str = "",
+    ) -> None:
+        self.name = name
+        self.probe = probe
+        self.state = state
+        self.interval = interval
+        self.debounce_threshold = debounce_threshold
+        self.notifier = notifier
+        self.stop_event = stop_event
+        self.heartbeat = heartbeat
+        self.dashboard = dashboard
+        self.is_tcp = is_tcp
+        self.display_endpoint = display_endpoint
+
+    def _log_console_check(self, result_passed: bool, latency_ms: float, error_reason: str | None, status_text: str) -> None:
+        """Print colored check outcome to console when dashboard is not active."""
+        ts_str = datetime.now().strftime("%H:%M:%S")
+        proto_tag = " [bold blue]TCP[/bold blue]" if self.is_tcp else ""
+        if result_passed:
+            console.print(
+                f"[[dim]{ts_str}[/dim]] [green]PASS[/green]{proto_tag} {self.name} "
+                f"([cyan]{int(latency_ms)}ms[/cyan]) [dim]{self.display_endpoint}[/dim]"
+            )
+        else:
+            reason = error_reason or "Check failed"
+            status_disp = f"[yellow]{status_text}[/yellow] - " if status_text else ""
+            console.print(
+                f"[[dim]{ts_str}[/dim]] [red]FAIL[/red]{proto_tag} {self.name} "
+                f"[{self.state.consecutive_failures}/{self.debounce_threshold}] "
+                f"{status_disp}{reason}"
+            )
+
+    async def run(self) -> None:
+        """Execute scheduled monitoring loop until stop_event is signaled."""
+        while not self.stop_event.is_set():
+            result = await self.probe.check()
+            should_outage, should_recovery = self.state.update(result, self.debounce_threshold)
+            self.heartbeat.write()
+
+            if not self.dashboard:
+                self._log_console_check(
+                    result_passed=result.passed,
+                    latency_ms=result.latency_ms,
+                    error_reason=result.error_reason,
+                    status_text=result.http_status_text if not self.is_tcp else "",
+                )
+
+            if should_outage:
+                if self.dashboard:
+                    prefix = "TCP " if self.is_tcp else ""
+                    self.dashboard.record_event(
+                        "outage", f"{prefix}{self.name} failed: {result.error_reason}"
+                    )
+                else:
+                    prefix = "TCP " if self.is_tcp else ""
+                    console.print(f"[bold red]>>> Outage alert dispatched for {prefix}{self.name}[/bold red]")
+                asyncio.create_task(
+                    self.notifier.send_outage_alert(self.state, self.debounce_threshold)
+                )
+
+            if should_recovery:
+                if self.dashboard:
+                    prefix = "TCP " if self.is_tcp else ""
+                    self.dashboard.record_event("recovery", f"{prefix}{self.name} recovered")
+                else:
+                    prefix = "TCP " if self.is_tcp else ""
+                    console.print(f"[bold green]>>> Recovery alert dispatched for {prefix}{self.name}[/bold green]")
+                asyncio.create_task(self.notifier.send_recovery_alert(self.state))
+
+            try:
+                await asyncio.wait_for(self.stop_event.wait(), timeout=self.interval)
+            except asyncio.TimeoutError:
+                pass
 
 
 class SentinelEngine:
-    """Coordinates concurrent target monitoring loops and alerting."""
+    """Coordinates concurrent target monitoring loops, workers, and alerting."""
 
     def __init__(self, config: SentinelConfig) -> None:
         self.config = config
+        self.heartbeat = default_heartbeat
         self.notifier = AlertDispatcher(
             config.telegram,
             config.webhook,
@@ -91,97 +207,46 @@ class SentinelEngine:
             )
 
     def get_state(self, name: str) -> TargetState | None:
+        """Retrieve the current TargetState for a given target name."""
         return self.states.get(name)
 
     async def _run_target_loop(self, target: TargetConfig, client: httpx.AsyncClient) -> None:
-        """Independently checks an HTTP target on its scheduled interval."""
+        """Run worker loop for an HTTP target (delegates to polymorphic TargetWorker)."""
         state = self.states[target.name]
-        debounce = self.config.global_config.consecutive_failures_to_alert
-        interval = target.interval or 60.0
-
-        while not self._stop_event.is_set():
-            result = await evaluate_target(target, client)
-            should_outage, should_recovery = state.update(result, debounce)
-            write_heartbeat()
-
-            ts_str = datetime.now().strftime("%H:%M:%S")
-            if not self.dashboard:
-                if result.passed:
-                    console.print(
-                        f"[[dim]{ts_str}[/dim]] [green]PASS[/green] {target.name} "
-                        f"([cyan]{int(result.latency_ms)}ms[/cyan]) [dim]{target.url}[/dim]"
-                    )
-                else:
-                    reason = result.error_reason or "Check failed"
-                    status_disp = result.http_status_text
-                    console.print(
-                        f"[[dim]{ts_str}[/dim]] [red]FAIL[/red] {target.name} "
-                        f"[{state.consecutive_failures}/{debounce}] "
-                        f"[yellow]{status_disp}[/yellow] - {reason}"
-                    )
-
-            if should_outage:
-                if self.dashboard:
-                    self.dashboard.record_event("outage", f"{target.name} failed: {result.error_reason}")
-                else:
-                    console.print(f"[bold red]>>> Outage alert dispatched for {target.name}[/bold red]")
-                asyncio.create_task(self.notifier.send_outage_alert(state, debounce))
-
-            if should_recovery:
-                if self.dashboard:
-                    self.dashboard.record_event("recovery", f"{target.name} recovered")
-                else:
-                    console.print(f"[bold green]>>> Recovery alert dispatched for {target.name}[/bold green]")
-                asyncio.create_task(self.notifier.send_recovery_alert(state))
-
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                pass
+        probe = HttpProbe(target, client)
+        worker = TargetWorker(
+            name=target.name,
+            probe=probe,
+            state=state,
+            interval=target.interval or 60.0,
+            debounce_threshold=self.config.global_config.consecutive_failures_to_alert,
+            notifier=self.notifier,
+            stop_event=self._stop_event,
+            heartbeat=self.heartbeat,
+            dashboard=self.dashboard,
+            is_tcp=False,
+            display_endpoint=target.url,
+        )
+        await worker.run()
 
     async def _run_tcp_target_loop(self, target: TCPTargetConfig) -> None:
-        """Independently checks a TCP socket target on its scheduled interval."""
+        """Run worker loop for a TCP target (delegates to polymorphic TargetWorker)."""
         state = self.states[target.name]
-        debounce = self.config.global_config.consecutive_failures_to_alert
-        interval = target.interval or 60.0
-
-        while not self._stop_event.is_set():
-            result = await evaluate_tcp_target(target)
-            should_outage, should_recovery = state.update(result, debounce)
-            write_heartbeat()
-
-            ts_str = datetime.now().strftime("%H:%M:%S")
-            if not self.dashboard:
-                if result.passed:
-                    console.print(
-                        f"[[dim]{ts_str}[/dim]] [green]PASS[/green] [bold blue]TCP[/bold blue] {target.name} "
-                        f"([cyan]{int(result.latency_ms)}ms[/cyan]) [dim]{target.host}:{target.port}[/dim]"
-                    )
-                else:
-                    reason = result.error_reason or "TCP Check failed"
-                    console.print(
-                        f"[[dim]{ts_str}[/dim]] [red]FAIL[/red] [bold blue]TCP[/bold blue] {target.name} "
-                        f"[{state.consecutive_failures}/{debounce}] - {reason}"
-                    )
-
-            if should_outage:
-                if self.dashboard:
-                    self.dashboard.record_event("outage", f"TCP {target.name} unreachable: {result.error_reason}")
-                else:
-                    console.print(f"[bold red]>>> Outage alert dispatched for TCP {target.name}[/bold red]")
-                asyncio.create_task(self.notifier.send_outage_alert(state, debounce))
-
-            if should_recovery:
-                if self.dashboard:
-                    self.dashboard.record_event("recovery", f"TCP {target.name} recovered")
-                else:
-                    console.print(f"[bold green]>>> Recovery alert dispatched for TCP {target.name}[/bold green]")
-                asyncio.create_task(self.notifier.send_recovery_alert(state))
-
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                pass
+        probe = TcpProbe(target)
+        worker = TargetWorker(
+            name=target.name,
+            probe=probe,
+            state=state,
+            interval=target.interval or 60.0,
+            debounce_threshold=self.config.global_config.consecutive_failures_to_alert,
+            notifier=self.notifier,
+            stop_event=self._stop_event,
+            heartbeat=self.heartbeat,
+            dashboard=self.dashboard,
+            is_tcp=True,
+            display_endpoint=f"{target.host}:{target.port}",
+        )
+        await worker.run()
 
     async def _run_daily_summary_loop(self) -> None:
         """Sends daily summary notifications at the configured UTC time."""
@@ -263,7 +328,7 @@ class SentinelEngine:
         """Start the async engine and monitor all configured targets concurrently."""
         self.running = True
         self._stop_event.clear()
-        write_heartbeat()
+        self.heartbeat.write()
 
         if self.metrics_server:
             await self.metrics_server.start()

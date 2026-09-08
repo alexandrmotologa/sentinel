@@ -5,24 +5,26 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import sys
-import time
-from typing import Any, Optional
+from typing import Any
 
-import httpx
 import typer
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
 from sentinel import __version__
-from sentinel.config import SentinelConfig, TargetConfig, TCPTargetConfig
+from sentinel.config import SentinelConfig
 from sentinel.dashboard import SentinelDashboard
 from sentinel.engine import SentinelEngine, is_daemon_healthy
-from sentinel.evaluator import CheckResult, create_async_client, evaluate_target, evaluate_tcp_target
+from sentinel.evaluator import CheckResult, HttpProbe, TcpProbe, create_async_client
 from sentinel.notifier import AlertDispatcher
 
+
+logger = logging.getLogger("sentinel.cli")
+console = Console()
 
 app = typer.Typer(
     name="sentinel",
@@ -30,10 +32,102 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
 )
-console = Console()
+
+
+class ConfigReportPresenter:
+    """Formats and prints Sentinel configuration summaries to the terminal."""
+
+    @staticmethod
+    def render_summary(cfg: SentinelConfig, config_path: Path) -> None:
+        """Print validation status, global defaults, channels, and target tables."""
+        console.print(f"[bold green]Configuration valid:[/bold green] {config_path}")
+        console.print(
+            f"Default interval: [cyan]{cfg.global_config.default_interval:.0f}s[/cyan] | "
+            f"Default timeout: [cyan]{cfg.global_config.default_timeout:.0f}s[/cyan] | "
+            f"Debounce: [yellow]{cfg.global_config.consecutive_failures_to_alert}[/yellow] failures"
+        )
+
+        channel_parts: list[str] = [
+            f"Telegram: {'[green]Enabled[/green]' if cfg.telegram.is_configured else '[yellow]Disabled[/yellow]'}",
+            f"Webhook: {'[green]Enabled[/green]' if cfg.webhook.is_configured else '[yellow]Disabled[/yellow]'}",
+            f"Discord: {'[green]Enabled[/green]' if cfg.discord.is_configured else '[yellow]Disabled[/yellow]'}",
+            f"Slack: {'[green]Enabled[/green]' if cfg.slack.is_configured else '[yellow]Disabled[/yellow]'}",
+        ]
+        console.print(" | ".join(channel_parts))
+
+        if cfg.metrics.enabled:
+            console.print(
+                f"Metrics server: [green]Enabled[/green] (http://{cfg.metrics.host}:{cfg.metrics.port}/metrics)"
+            )
+
+        table = Table(title="Configured Targets", show_header=True, header_style="bold magenta")
+        table.add_column("Type", style="yellow", width=5)
+        table.add_column("Target Name", style="cyan")
+        table.add_column("Endpoint")
+        table.add_column("Interval", justify="right")
+        table.add_column("Expectation Rules")
+
+        for t in cfg.targets:
+            rules: list[str] = []
+            if t.expect.status_code is not None:
+                rules.append(f"code={t.expect.status_code}")
+            if t.expect.max_latency_ms is not None:
+                rules.append(f"latency<={int(t.expect.max_latency_ms)}ms")
+            if t.expect.contains_text:
+                rules.append(f"text='{t.expect.contains_text[:15]}...'")
+            if t.expect.json_match:
+                rules.append("json-path")
+            if t.expect.ssl_check:
+                rules.append(f"ssl<={t.expect.ssl_warn_days}d")
+
+            rule_summary = ", ".join(rules) if rules else "default (status 200)"
+            table.add_row(
+                "HTTP",
+                t.name,
+                f"{t.method} {t.url}",
+                f"{t.interval:.0f}s",
+                rule_summary,
+            )
+
+        for tcp in cfg.tcp_targets:
+            table.add_row(
+                "TCP",
+                tcp.name,
+                f"tcp://{tcp.host}:{tcp.port}",
+                f"{tcp.interval:.0f}s",
+                f"timeout={tcp.timeout:.1f}s",
+            )
+
+        console.print(table)
+
+
+class ProbeRunner:
+    """Executes immediate one-off health checks across all configured targets."""
+
+    @staticmethod
+    async def run_all(cfg: SentinelConfig) -> list[tuple[str, str, str, CheckResult]]:
+        """Run all probes concurrently and return (type, name, endpoint, CheckResult) list."""
+        results: list[tuple[str, str, str, CheckResult]] = []
+        async with create_async_client() as client:
+            http_probes = [(t.name, t.url, HttpProbe(t, client)) for t in cfg.targets]
+            tcp_probes = [(tcp.name, f"{tcp.host}:{tcp.port}", TcpProbe(tcp)) for tcp in cfg.tcp_targets]
+
+            http_tasks = [probe.check() for _, _, probe in http_probes]
+            tcp_tasks = [probe.check() for _, _, probe in tcp_probes]
+
+            http_res = await asyncio.gather(*http_tasks) if http_tasks else []
+            tcp_res = await asyncio.gather(*tcp_tasks) if tcp_tasks else []
+
+            for (name, url, _), res in zip(http_probes, http_res):
+                results.append(("HTTP", name, url, res))
+            for (name, endpoint, _), res in zip(tcp_probes, tcp_res):
+                results.append(("TCP", name, endpoint, res))
+
+        return results
 
 
 def version_callback(value: bool) -> None:
+    """Print version string and exit cleanly."""
     if value:
         console.print(f"Sentinel v{__version__}")
         raise typer.Exit()
@@ -41,7 +135,7 @@ def version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(
+    version: bool | None = typer.Option(
         None,
         "--version",
         "-v",
@@ -73,71 +167,7 @@ def check_config(
         console.print(f"[bold red]Configuration error in {config_path}:[/bold red]\n{exc}")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold green]Configuration valid:[/bold green] {config_path}")
-    console.print(
-        f"Default interval: [cyan]{cfg.global_config.default_interval:.0f}s[/cyan] | "
-        f"Default timeout: [cyan]{cfg.global_config.default_timeout:.0f}s[/cyan] | "
-        f"Debounce: [yellow]{cfg.global_config.consecutive_failures_to_alert}[/yellow] failures"
-    )
-
-    # Channels summary
-    channel_parts: list[str] = []
-    channel_parts.append(
-        f"Telegram: {'[green]Enabled[/green]' if cfg.telegram.is_configured else '[yellow]Disabled[/yellow]'}"
-    )
-    channel_parts.append(
-        f"Webhook: {'[green]Enabled[/green]' if cfg.webhook.is_configured else '[yellow]Disabled[/yellow]'}"
-    )
-    channel_parts.append(
-        f"Discord: {'[green]Enabled[/green]' if cfg.discord.is_configured else '[yellow]Disabled[/yellow]'}"
-    )
-    channel_parts.append(
-        f"Slack: {'[green]Enabled[/green]' if cfg.slack.is_configured else '[yellow]Disabled[/yellow]'}"
-    )
-    console.print(" | ".join(channel_parts))
-
-    if cfg.metrics.enabled:
-        console.print(f"Metrics server: [green]Enabled[/green] (http://{cfg.metrics.host}:{cfg.metrics.port}/metrics)")
-
-    table = Table(title="Configured Targets", show_header=True, header_style="bold magenta")
-    table.add_column("Type", style="yellow", width=5)
-    table.add_column("Target Name", style="cyan")
-    table.add_column("Endpoint")
-    table.add_column("Interval", justify="right")
-    table.add_column("Expectation Rules")
-
-    for t in cfg.targets:
-        rules: list[str] = []
-        if t.expect.status_code is not None:
-            rules.append(f"code={t.expect.status_code}")
-        if t.expect.max_latency_ms is not None:
-            rules.append(f"latency<={int(t.expect.max_latency_ms)}ms")
-        if t.expect.contains_text:
-            rules.append(f"text='{t.expect.contains_text[:15]}...'")
-        if t.expect.json_match:
-            rules.append("json-path")
-        if t.expect.ssl_check:
-            rules.append(f"ssl<={t.expect.ssl_warn_days}d")
-
-        rule_summary = ", ".join(rules) if rules else "default (status 200)"
-        table.add_row(
-            "HTTP",
-            t.name,
-            f"{t.method} {t.url}",
-            f"{t.interval:.0f}s",
-            rule_summary,
-        )
-
-    for tcp in cfg.tcp_targets:
-        table.add_row(
-            "TCP",
-            tcp.name,
-            f"tcp://{tcp.host}:{tcp.port}",
-            f"{tcp.interval:.0f}s",
-            f"timeout={tcp.timeout:.1f}s",
-        )
-
-    console.print(table)
+    ConfigReportPresenter.render_summary(cfg, config_path)
 
 
 @app.command(name="test-alert")
@@ -207,28 +237,11 @@ def probe(
         console.print("[bold yellow]No targets defined in configuration.[/bold yellow]")
         raise typer.Exit(code=1)
 
-    async def _run_probes() -> list[tuple[str, str, str, CheckResult]]:
-        # Returns list of (target_type, name, endpoint, result)
-        results: list[tuple[str, str, str, CheckResult]] = []
-        async with create_async_client() as client:
-            http_tasks = [evaluate_target(t, client) for t in cfg.targets]
-            tcp_tasks = [evaluate_tcp_target(tcp) for tcp in cfg.tcp_targets]
-
-            http_res = await asyncio.gather(*http_tasks) if http_tasks else []
-            tcp_res = await asyncio.gather(*tcp_tasks) if tcp_tasks else []
-
-            for t, res in zip(cfg.targets, http_res):
-                results.append(("HTTP", t.name, t.url, res))
-            for tcp, res in zip(cfg.tcp_targets, tcp_res):
-                results.append(("TCP", tcp.name, f"{tcp.host}:{tcp.port}", res))
-
-        return results
-
-    results = asyncio.run(_run_probes())
+    results = asyncio.run(ProbeRunner.run_all(cfg))
     all_passed = all(res.passed for _, _, _, res in results)
 
     if as_json:
-        payload = {
+        payload: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "all_passed": all_passed,
             "targets": [
