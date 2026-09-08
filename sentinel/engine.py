@@ -14,8 +14,8 @@ import httpx
 from rich.console import Console
 
 from sentinel.config import SentinelConfig, TargetConfig
-from sentinel.evaluator import evaluate_target
-from sentinel.notifier import TelegramNotifier
+from sentinel.evaluator import create_async_client, evaluate_target
+from sentinel.notifier import AlertDispatcher
 from sentinel.state import TargetState, TargetStatus
 
 
@@ -59,7 +59,7 @@ class SentinelEngine:
 
     def __init__(self, config: SentinelConfig) -> None:
         self.config = config
-        self.notifier = TelegramNotifier(config.telegram)
+        self.notifier = AlertDispatcher(config.telegram, config.webhook)
         self.states: dict[str, TargetState] = {
             target.name: TargetState(name=target.name, url=target.url)
             for target in config.targets
@@ -154,7 +154,7 @@ class SentinelEngine:
         )
 
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-        async with httpx.AsyncClient(limits=limits, http2=True) as client:
+        async with create_async_client(limits=limits) as client:
             tasks: list[asyncio.Task[None]] = []
 
             for target in self.config.targets:

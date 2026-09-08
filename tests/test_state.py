@@ -123,3 +123,20 @@ def test_uptime_percentage():
     state.total_checks = 10
     state.successful_checks = 9
     assert state.uptime_percentage == 90.0
+
+
+def test_latency_statistics():
+    state = TargetState(name="Latency Target", url="https://latency.com")
+    assert state.average_latency_ms == 0.0
+
+    r1 = CheckResult(passed=True, status_code=200, status_phrase="OK", latency_ms=100.0)
+    r2 = CheckResult(passed=True, status_code=200, status_phrase="OK", latency_ms=200.0)
+    r3 = CheckResult(passed=True, status_code=200, status_phrase="OK", latency_ms=300.0)
+
+    state.update(r1, debounce_threshold=2)
+    state.update(r2, debounce_threshold=2)
+    state.update(r3, debounce_threshold=2)
+
+    assert state.min_latency_ms == 100.0
+    assert state.max_latency_ms == 300.0
+    assert state.average_latency_ms == 200.0

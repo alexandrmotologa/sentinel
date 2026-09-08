@@ -77,6 +77,14 @@ The `telegram` section controls alert delivery:
 - `send_silently`: When set to true, disables sound notifications for recovery messages.
 - `enabled`: Enables or disables Telegram notifications globally.
 
+## Webhook settings
+
+The optional `webhook` section allows sending JSON alerts to external services:
+
+- `url`: HTTP POST endpoint (e.g., Slack incoming webhook, Discord, or internal API).
+- `headers`: Key-value map of custom request headers (such as `Authorization` or `X-API-Key`).
+- `enabled`: Enables or disables webhook alerts.
+
 ## Target definitions
 
 Each entry in `targets` configures an endpoint check:

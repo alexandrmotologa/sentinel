@@ -55,12 +55,21 @@ class TargetState:
     successful_checks: int = 0
     last_checked_at: datetime | None = None
     previous_downtime_seconds: float = 0.0
+    min_latency_ms: float = 0.0
+    max_latency_ms: float = 0.0
+    total_latency_ms: float = 0.0
 
     @property
     def uptime_percentage(self) -> float:
         if self.total_checks == 0:
             return 100.0
         return (self.successful_checks / self.total_checks) * 100.0
+
+    @property
+    def average_latency_ms(self) -> float:
+        if self.total_checks == 0:
+            return 0.0
+        return self.total_latency_ms / self.total_checks
 
     def get_downtime_seconds(self, now: datetime | None = None) -> float:
         if self.down_since is None:
@@ -82,6 +91,12 @@ class TargetState:
         self.total_checks += 1
         self.last_checked_at = now
         self.last_latency_ms = result.latency_ms
+        self.total_latency_ms += result.latency_ms
+        if self.total_checks == 1 or result.latency_ms < self.min_latency_ms:
+            self.min_latency_ms = result.latency_ms
+        if result.latency_ms > self.max_latency_ms:
+            self.max_latency_ms = result.latency_ms
+
         self.last_status_code = result.status_code
         self.last_status_phrase = result.status_phrase
 

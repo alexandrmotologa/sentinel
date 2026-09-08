@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sys
-from typing import Optional
+from typing import Any, Optional
 
+import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from sentinel import __version__
-from sentinel.config import SentinelConfig
+from sentinel.config import SentinelConfig, TargetConfig
 from sentinel.engine import SentinelEngine, is_daemon_healthy
-from sentinel.notifier import TelegramNotifier
+from sentinel.evaluator import CheckResult, create_async_client, evaluate_target
+from sentinel.notifier import AlertDispatcher, TelegramNotifier
 
 
 app = typer.Typer(
@@ -74,7 +78,8 @@ def check_config(
     )
 
     tg_status = "[green]Enabled[/green]" if cfg.telegram.is_configured else "[yellow]Not Configured[/yellow]"
-    console.print(f"Telegram alerts: {tg_status}")
+    wh_status = "[green]Enabled[/green]" if cfg.webhook.is_configured else "[yellow]Not Configured[/yellow]"
+    console.print(f"Telegram alerts: {tg_status} | Webhook alerts: {wh_status}")
 
     table = Table(title="Configured Targets", show_header=True, header_style="bold magenta")
     table.add_column("Target Name", style="cyan")
@@ -128,23 +133,101 @@ def test_alert(
         console.print(f"[bold red]Configuration error:[/bold red] {exc}")
         raise typer.Exit(code=1)
 
-    if not cfg.telegram.is_configured:
+    if not cfg.telegram.is_configured and not cfg.webhook.is_configured:
         console.print(
-            "[bold yellow]Warning:[/bold yellow] Telegram bot_token or chat_id is missing or disabled."
+            "[bold yellow]Warning:[/bold yellow] Neither Telegram nor Webhook is configured."
         )
         raise typer.Exit(code=1)
 
-    console.print("[cyan]Sending test alert to Telegram...[/cyan]")
-    notifier = TelegramNotifier(cfg.telegram)
+    console.print("[cyan]Sending test alert...[/cyan]")
+    dispatcher = AlertDispatcher(cfg.telegram, cfg.webhook)
 
     async def _send() -> bool:
-        return await notifier.send_test_alert()
+        return await dispatcher.send_test_alert()
 
     success = asyncio.run(_send())
     if success:
-        console.print("[bold green]Test alert successfully delivered to Telegram![/bold green]")
+        console.print("[bold green]Test alert successfully delivered![/bold green]")
     else:
-        console.print("[bold red]Failed to deliver test alert. Check token and chat ID.[/bold red]")
+        console.print("[bold red]Failed to deliver test alert. Check channel credentials.[/bold red]")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="probe")
+def probe(
+    config_path: Path = typer.Argument(
+        Path("sites.yaml"),
+        help="Path to the YAML configuration file",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Output probe results as JSON",
+    ),
+) -> None:
+    """Execute a one-off immediate health check across all targets."""
+    if not config_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {config_path}")
+        raise typer.Exit(code=1)
+
+    try:
+        cfg = SentinelConfig.load_yaml(config_path)
+    except Exception as exc:
+        console.print(f"[bold red]Configuration error:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+
+    if not cfg.targets:
+        console.print("[bold yellow]No targets defined.[/bold yellow]")
+        raise typer.Exit(code=1)
+
+    async def _run_probes() -> list[tuple[Any, CheckResult]]:
+        async with create_async_client() as client:
+            tasks = [evaluate_target(t, client) for t in cfg.targets]
+            results = await asyncio.gather(*tasks)
+            return list(zip(cfg.targets, results))
+
+    results = asyncio.run(_run_probes())
+    all_passed = all(res.passed for _, res in results)
+
+    if as_json:
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "all_passed": all_passed,
+            "targets": [
+                {
+                    "name": t.name,
+                    "url": t.url,
+                    "passed": res.passed,
+                    "status_code": res.status_code,
+                    "status_phrase": res.status_phrase,
+                    "latency_ms": round(res.latency_ms, 2),
+                    "error_reason": res.error_reason,
+                    "ssl_days_left": res.ssl_days_left,
+                }
+                for t, res in results
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        if not all_passed:
+            raise typer.Exit(code=1)
+        return
+
+    table = Table(title="Target Probe Results", show_header=True, header_style="bold magenta")
+    table.add_column("Target Name", style="cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("HTTP Code", justify="center")
+    table.add_column("Latency", justify="right")
+    table.add_column("Details")
+
+    for t, res in results:
+        status_tag = "[green]PASS[/green]" if res.passed else "[red]FAIL[/red]"
+        code_str = str(res.status_code) if res.status_code is not None else "-"
+        latency_str = f"{int(res.latency_ms)}ms"
+        details = res.error_reason if not res.passed else "Healthy"
+        table.add_row(t.name, status_tag, code_str, latency_str, details)
+
+    console.print(table)
+    if not all_passed:
         raise typer.Exit(code=1)
 
 

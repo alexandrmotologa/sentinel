@@ -37,6 +37,18 @@ class CheckResult:
         return self.status_phrase
 
 
+def create_async_client(**kwargs: Any) -> httpx.AsyncClient:
+    """Create an httpx.AsyncClient with HTTP/2 enabled when available."""
+    try:
+        import h2  # noqa: F401
+        has_http2 = True
+    except ImportError:
+        has_http2 = False
+
+    kwargs.setdefault("http2", has_http2)
+    return httpx.AsyncClient(**kwargs)
+
+
 def _check_status_code(expected: Any, actual: int) -> tuple[bool, str | None]:
     if expected is None:
         return True, None

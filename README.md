@@ -1,6 +1,10 @@
 # Sentinel
 
-Sentinel is an asynchronous uptime and API health monitoring daemon written in Python 3.12. It monitors multiple endpoints concurrently, validates status codes, latency thresholds, text presence, JSON payload assertions, and SSL certificate expiration, and sends Telegram alerts with flap protection.
+[![CI](https://github.com/alexandrmotologa/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandrmotologa/sentinel/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Sentinel is an asynchronous uptime and API health monitoring daemon written in Python 3.12. It monitors multiple endpoints concurrently, validates status codes, latency thresholds, text presence, JSON payload assertions, and SSL certificate expiration, and sends Telegram and generic webhook alerts with flap protection.
 
 ## Features
 
@@ -9,7 +13,8 @@ Sentinel is an asynchronous uptime and API health monitoring daemon written in P
 - Downtime tracking and recovery notifications with elapsed outage duration
 - Health assertion rules: HTTP status code ranges, max latency, regex, text, and nested JSON keys
 - SSL certificate expiration warning
-- Formatted Telegram alerts with HTML styling and retry handling
+- Multi-channel alerting: Formatted Telegram alerts and generic HTTP webhooks (Slack, Discord, PagerDuty)
+- One-off target probing with `sentinel probe` and optional JSON output
 - Docker and docker-compose deployment with non-root user and container healthchecks
 
 ## Quick Start
@@ -42,13 +47,25 @@ cp sites.example.yaml sites.yaml
 sentinel check-config sites.yaml
 ```
 
-3. Send a test Telegram alert:
+3. Run an immediate one-off health probe across all targets:
+
+```bash
+sentinel probe sites.yaml
+```
+
+Or export results as JSON:
+
+```bash
+sentinel probe sites.yaml --json
+```
+
+4. Send a test alert to verify notification channels:
 
 ```bash
 sentinel test-alert --config sites.yaml
 ```
 
-4. Start the monitoring daemon:
+5. Start the 24/7 monitoring daemon:
 
 ```bash
 sentinel run sites.yaml

@@ -63,6 +63,41 @@ When `daily_summary_time` is configured under `global`, Sentinel sends a status 
 🟢 <b>Stripe Webhook</b>: 99.7% uptime (210 ms)
 ```
 
+## Webhook JSON payloads
+
+When a `webhook` endpoint is configured, Sentinel sends structured JSON payloads via HTTP POST.
+
+### Outage payload
+
+```json
+{
+  "event": "outage",
+  "target": "Production API Health",
+  "url": "https://api.example.com/health",
+  "status_code": 503,
+  "status_phrase": "Service Unavailable",
+  "latency_ms": 2410.0,
+  "error_reason": "Expected JSON database='connected', got 'timeout'",
+  "consecutive_failures": 2,
+  "timestamp": "2026-09-09T00:35:12+00:00"
+}
+```
+
+### Recovery payload
+
+```json
+{
+  "event": "recovery",
+  "target": "Production API Health",
+  "url": "https://api.example.com/health",
+  "status_code": 200,
+  "latency_ms": 185.0,
+  "downtime_seconds": 255.0,
+  "downtime_duration": "4 minutes, 15 seconds",
+  "timestamp": "2026-09-09T00:39:27+00:00"
+}
+```
+
 ## Reliability and retries
 
-Network failures or Telegram rate limits (HTTP 429) do not stop the monitoring loop. Sentinel uses exponential backoff up to three attempts per message before logging a warning and continuing checks.
+Network failures or API rate limits do not stop the monitoring loop. Sentinel uses exponential backoff up to three attempts per message before logging a warning and continuing checks.

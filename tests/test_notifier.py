@@ -192,3 +192,58 @@ async def test_daily_summary_formatting():
     assert "75.00%" in text
     assert "API 1" in text
     assert "API 2" in text
+
+
+@pytest.mark.asyncio
+async def test_webhook_notifier():
+    from sentinel.config import WebhookConfig
+    from sentinel.notifier import WebhookNotifier
+
+    captured = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured
+        captured = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(status_code=200, json={"received": True})
+
+    transport = httpx.MockTransport(handler)
+    cfg = WebhookConfig(url="https://hooks.example.com/alerts", enabled=True)
+    notifier = WebhookNotifier(cfg)
+
+    orig_client = httpx.AsyncClient
+    try:
+        httpx.AsyncClient = lambda **kwargs: orig_client(transport=transport, **kwargs)
+        sent = await notifier.send_webhook({"event": "outage", "service": "payments"})
+    finally:
+        httpx.AsyncClient = orig_client
+
+    assert sent
+    assert captured == {"event": "outage", "service": "payments"}
+
+
+@pytest.mark.asyncio
+async def test_alert_dispatcher_combined():
+    from sentinel.config import TelegramConfig, WebhookConfig
+    from sentinel.notifier import AlertDispatcher
+
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(status_code=200, json={"ok": True})
+
+    transport = httpx.MockTransport(handler)
+    tg_cfg = TelegramConfig(bot_token="token", chat_id="123", enabled=True)
+    hook_cfg = WebhookConfig(url="https://webhook.site/test", enabled=True)
+    dispatcher = AlertDispatcher(tg_cfg, hook_cfg)
+
+    orig_client = httpx.AsyncClient
+    try:
+        httpx.AsyncClient = lambda **kwargs: orig_client(transport=transport, **kwargs)
+        sent = await dispatcher.send_test_alert()
+    finally:
+        httpx.AsyncClient = orig_client
+
+    assert sent
+    assert any("api.telegram.org" in url for url in calls)
+    assert any("webhook.site" in url for url in calls)

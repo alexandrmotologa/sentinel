@@ -11,6 +11,12 @@ telegram:
   send_silently: false                # When true, delivers recovery alerts without sound
   enabled: true
 
+webhook:
+  url: "env:WEBHOOK_URL"              # Optional JSON webhook (Slack, Discord, PagerDuty, custom)
+  headers:
+    X-Sentinel-Auth: "env:WEBHOOK_SECRET"
+  enabled: false
+
 targets:
   - name: "Production API Health"
     url: "https://api.example.com/health"

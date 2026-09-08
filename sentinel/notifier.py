@@ -186,3 +186,146 @@ class TelegramNotifier:
         )
 
         return await self.send_message(message, disable_notification=self.config.send_silently)
+
+
+class WebhookNotifier:
+    """Delivers structured JSON alerts to generic HTTP webhooks."""
+
+    def __init__(self, config: Any) -> None:
+        self.config = config
+
+    async def send_webhook(
+        self,
+        payload: dict[str, Any],
+        max_retries: int = 3,
+    ) -> bool:
+        if not getattr(self.config, "is_configured", False):
+            return False
+
+        url = self.config.url
+        headers = {"Content-Type": "application/json", **self.config.headers}
+        delay = 1.0
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = await client.post(url, json=payload, headers=headers)
+                    if response.is_success:
+                        return True
+                    logger.warning(
+                        "Webhook returned status %d on attempt %d/%d",
+                        response.status_code,
+                        attempt,
+                        max_retries,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Webhook delivery error (attempt %d/%d): %s",
+                        attempt,
+                        max_retries,
+                        exc,
+                    )
+
+                if attempt < max_retries:
+                    await asyncio.sleep(delay)
+                    delay *= 2.0
+
+        return False
+
+
+class AlertDispatcher:
+    """Coordinates notifications across all configured channels."""
+
+    def __init__(self, telegram_cfg: Any, webhook_cfg: Any) -> None:
+        self.telegram = TelegramNotifier(telegram_cfg)
+        self.webhook = WebhookNotifier(webhook_cfg)
+
+    @property
+    def is_configured(self) -> bool:
+        return self.telegram.config.is_configured or self.webhook.config.is_configured
+
+    async def send_outage_alert(
+        self,
+        state: TargetState,
+        debounce_threshold: int,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        results = await asyncio.gather(
+            self.telegram.send_outage_alert(state, debounce_threshold, ts),
+            self.webhook.send_webhook({
+                "event": "outage",
+                "target": state.name,
+                "url": state.url,
+                "status_code": state.last_status_code,
+                "status_phrase": state.last_status_phrase,
+                "latency_ms": state.last_latency_ms,
+                "error_reason": state.last_error_reason,
+                "consecutive_failures": state.consecutive_failures,
+                "timestamp": ts.isoformat(),
+            }),
+            return_exceptions=True,
+        )
+        return any(r is True for r in results)
+
+    async def send_recovery_alert(
+        self,
+        state: TargetState,
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        results = await asyncio.gather(
+            self.telegram.send_recovery_alert(state, ts),
+            self.webhook.send_webhook({
+                "event": "recovery",
+                "target": state.name,
+                "url": state.url,
+                "status_code": state.last_status_code,
+                "latency_ms": state.last_latency_ms,
+                "downtime_seconds": state.previous_downtime_seconds,
+                "downtime_duration": format_duration(state.previous_downtime_seconds),
+                "timestamp": ts.isoformat(),
+            }),
+            return_exceptions=True,
+        )
+        return any(r is True for r in results)
+
+    async def send_test_alert(self) -> bool:
+        results = await asyncio.gather(
+            self.telegram.send_test_alert(),
+            self.webhook.send_webhook({
+                "event": "test",
+                "message": "Sentinel alert delivery verified",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }),
+            return_exceptions=True,
+        )
+        return any(r is True for r in results)
+
+    async def send_daily_summary(
+        self,
+        states: list[TargetState],
+        timestamp: datetime | None = None,
+    ) -> bool:
+        ts = timestamp or datetime.now(timezone.utc)
+        results = await asyncio.gather(
+            self.telegram.send_daily_summary(states, ts),
+            self.webhook.send_webhook({
+                "event": "daily_summary",
+                "total_targets": len(states),
+                "healthy_targets": sum(1 for s in states if s.status.value == "UP"),
+                "targets": [
+                    {
+                        "name": s.name,
+                        "url": s.url,
+                        "status": s.status.value,
+                        "uptime_percentage": s.uptime_percentage,
+                        "average_latency_ms": s.average_latency_ms,
+                    }
+                    for s in states
+                ],
+                "timestamp": ts.isoformat(),
+            }),
+            return_exceptions=True,
+        )
+        return any(r is True for r in results)

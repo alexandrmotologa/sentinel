@@ -125,6 +125,18 @@ class TelegramConfig(BaseModel):
         return bool(self.enabled and self.bot_token.strip() and self.chat_id.strip())
 
 
+class WebhookConfig(BaseModel):
+    """Generic HTTP webhook alerting configuration."""
+
+    url: str = Field(default="", description="Webhook destination URL for JSON payloads")
+    headers: dict[str, str] = Field(default_factory=dict, description="Custom HTTP headers for webhook POST")
+    enabled: bool = Field(default=True, description="Enable webhook notifications")
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.enabled and self.url.strip())
+
+
 class ExpectConfig(BaseModel):
     """Assertions required for a health check to pass."""
 
@@ -201,6 +213,7 @@ class SentinelConfig(BaseModel):
 
     global_config: GlobalConfig = Field(default_factory=GlobalConfig, alias="global")
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    webhook: WebhookConfig = Field(default_factory=WebhookConfig)
     targets: list[TargetConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")

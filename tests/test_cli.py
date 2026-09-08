@@ -42,3 +42,41 @@ def test_cli_healthcheck(monkeypatch, tmp_path):
     result = runner.invoke(app, ["healthcheck"])
     assert result.exit_code == 0
     assert "OK: Daemon heartbeat is fresh." in result.output
+
+
+def test_cli_probe_success(monkeypatch, tmp_path):
+    import httpx
+    from sentinel import evaluator
+
+    yaml_content = """
+targets:
+  - name: "API Test"
+    url: "https://mock.api/health"
+    expect:
+      status_code: 200
+"""
+    cfg_file = tmp_path / "sites.yaml"
+    cfg_file.write_text(yaml_content, encoding="utf-8")
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, text="OK")
+
+    transport = httpx.MockTransport(mock_handler)
+    orig_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: orig_client(transport=transport, **kwargs),
+    )
+
+    # Standard table output
+    result = runner.invoke(app, ["probe", str(cfg_file)])
+    assert result.exit_code == 0
+    assert "Target Probe Results" in result.output
+    assert "PASS" in result.output
+
+    # JSON output
+    result_json = runner.invoke(app, ["probe", str(cfg_file), "--json"])
+    assert result_json.exit_code == 0
+    assert '"all_passed": true' in result_json.output
+    assert '"API Test"' in result_json.output
