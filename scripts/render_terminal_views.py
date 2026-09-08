@@ -156,7 +156,6 @@ def generate_dashboard_view(dest_html: Path) -> None:
     api_state.status = TargetStatus.UP
     api_state.last_latency_ms = 45.2
     api_state.last_status_code = 200
-    api_state.uptime_seconds = 14400.0
 
     web_state = TargetState(name="Landing Page", url="https://example.com")
     web_state.total_checks = 240
@@ -164,8 +163,6 @@ def generate_dashboard_view(dest_html: Path) -> None:
     web_state.status = TargetStatus.UP
     web_state.last_latency_ms = 112.8
     web_state.last_status_code = 200
-    web_state.ssl_days_left = 82
-    web_state.uptime_seconds = 14340.0
 
     stripe_state = TargetState(name="Stripe Webhook Listener", url="https://hooks.example.com")
     stripe_state.total_checks = 320
@@ -174,23 +171,20 @@ def generate_dashboard_view(dest_html: Path) -> None:
     stripe_state.consecutive_failures = 3
     stripe_state.last_latency_ms = 502.4
     stripe_state.last_status_code = 503
-    stripe_state.last_error = "Expected status 200, got 503 Service Unavailable"
+    stripe_state.last_error_reason = "Expected status 200, got 503 Service Unavailable"
     stripe_state.down_since = datetime.now(timezone.utc)
-    stripe_state.uptime_seconds = 13800.0
 
     pg_state = TargetState(name="Primary PostgreSQL", url="tcp://db.internal:5432")
     pg_state.total_checks = 480
     pg_state.successful_checks = 480
     pg_state.status = TargetStatus.UP
     pg_state.last_latency_ms = 12.1
-    pg_state.uptime_seconds = 14400.0
 
     redis_state = TargetState(name="Redis Cache Cluster", url="tcp://127.0.0.1:6379")
     redis_state.total_checks = 960
     redis_state.successful_checks = 960
     redis_state.status = TargetStatus.UP
     redis_state.last_latency_ms = 2.4
-    redis_state.uptime_seconds = 14400.0
 
     engine.states = {
         "Production API Health": api_state,
