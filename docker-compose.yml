@@ -1,0 +1,22 @@
+services:
+  sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sentinel:latest
+    container_name: sentinel
+    restart: unless-stopped
+    volumes:
+      - ./sites.yaml:/etc/sentinel/sites.yaml:ro
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - API_SECRET=${API_SECRET:-}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+        reservations:
+          cpus: "0.05"
+          memory: 24M

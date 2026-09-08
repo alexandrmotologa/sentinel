@@ -1,0 +1,17 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+venv
+.git
+.gitignore
+.dockerignore
+.pytest_cache
+.coverage
+htmlcov
+tests
+docs
+*.log
+.sentinel.heartbeat

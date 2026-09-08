@@ -1,0 +1,316 @@
+"""Health evaluation engine for checking HTTP endpoints against assertion rules."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone
+import json
+import re
+import socket
+import ssl
+import time
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+
+from sentinel.config import TargetConfig
+
+
+@dataclass
+class CheckResult:
+    """Outcome of an endpoint health evaluation."""
+
+    passed: bool
+    status_code: int | None
+    status_phrase: str
+    latency_ms: float
+    error_reason: str | None = None
+    ssl_days_left: int | None = None
+    checked_at: datetime = datetime.now(timezone.utc)
+
+    @property
+    def http_status_text(self) -> str:
+        if self.status_code is not None:
+            return f"{self.status_code} {self.status_phrase}".strip()
+        return self.status_phrase
+
+
+def _check_status_code(expected: Any, actual: int) -> tuple[bool, str | None]:
+    if expected is None:
+        return True, None
+
+    if isinstance(expected, int):
+        if actual == expected:
+            return True, None
+        return False, f"Expected status {expected}, got {actual}"
+
+    if isinstance(expected, list):
+        int_codes = [int(c) for c in expected]
+        if actual in int_codes:
+            return True, None
+        return False, f"Expected status in {int_codes}, got {actual}"
+
+    if isinstance(expected, str):
+        # Support ranges such as '200-299'
+        if "-" in expected:
+            parts = expected.split("-", 1)
+            try:
+                start = int(parts[0].strip())
+                end = int(parts[1].strip())
+                if start <= actual <= end:
+                    return True, None
+                return False, f"Expected status in range {start}-{end}, got {actual}"
+            except ValueError:
+                pass
+        try:
+            single = int(expected.strip())
+            if actual == single:
+                return True, None
+            return False, f"Expected status {single}, got {actual}"
+        except ValueError:
+            pass
+
+    return True, None
+
+
+def _get_nested_json_value(data: Any, key_path: str) -> tuple[bool, Any]:
+    """Retrieve value using dot-notation (e.g., 'services.db.status')."""
+    parts = key_path.split(".")
+    current = data
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return False, None
+    return True, current
+
+
+def _match_json_structure(expected: Any, actual: Any, path: str = "") -> tuple[bool, str | None]:
+    """Recursively match expected dictionary structure against actual JSON."""
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return False, f"Expected JSON object at '{path or '$'}', got {type(actual).__name__}"
+        for k, v in expected.items():
+            subpath = f"{path}.{k}" if path else k
+            # Check if key is dot-notation in flat map
+            if "." in k:
+                found, subval = _get_nested_json_value(actual, k)
+                if not found:
+                    return False, f"Expected key '{k}' not found in JSON"
+                match, err = _match_json_structure(v, subval, subpath)
+                if not match:
+                    return False, err
+                continue
+
+            if k not in actual:
+                return False, f"Expected JSON key '{k}' missing from response"
+            match, err = _match_json_structure(v, actual[k], subpath)
+            if not match:
+                return False, err
+        return True, None
+
+    if actual != expected:
+        return False, f"Expected JSON {path} = {expected!r}, got {actual!r}"
+
+    return True, None
+
+
+async def get_ssl_days_left(url: str, timeout: float = 5.0) -> int:
+    """Inspect the SSL certificate of an HTTPS URL and return remaining valid days."""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        return 9999
+
+    host = parsed.hostname or ""
+    port = parsed.port or 443
+
+    loop = asyncio.get_running_loop()
+
+    def _probe_ssl() -> int:
+        context = ssl.create_default_context()
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with context.wrap_socket(sock, server_hostname=host) as ssock:
+                cert = ssock.getpeercert()
+                if not cert or "notAfter" not in cert:
+                    return 0
+                not_after_str = cert["notAfter"]
+                # Format: 'May 26 23:59:59 2026 GMT'
+                expire_date = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(
+                    tzinfo=timezone.utc
+                )
+                now = datetime.now(timezone.utc)
+                delta = expire_date - now
+                return max(0, delta.days)
+
+    return await loop.run_in_executor(None, _probe_ssl)
+
+
+async def evaluate_target(target: TargetConfig, client: httpx.AsyncClient) -> CheckResult:
+    """Execute target request and evaluate health expectations."""
+    url = target.url
+    method = target.method
+    timeout = target.timeout or 10.0
+    headers = dict(target.headers)
+    body = target.body
+
+    start_time = time.perf_counter()
+
+    try:
+        req_content = body.encode("utf-8") if body is not None else None
+        response = await client.request(
+            method=method,
+            url=url,
+            headers=headers,
+            content=req_content,
+            timeout=timeout,
+            follow_redirects=target.follow_redirects,
+        )
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+
+    except httpx.TimeoutException:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return CheckResult(
+            passed=False,
+            status_code=None,
+            status_phrase="Timeout",
+            latency_ms=latency_ms,
+            error_reason=f"Connection timed out after {timeout:.1f}s",
+            checked_at=datetime.now(timezone.utc),
+        )
+    except httpx.ConnectError as exc:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return CheckResult(
+            passed=False,
+            status_code=None,
+            status_phrase="Connection Failed",
+            latency_ms=latency_ms,
+            error_reason=f"Failed to connect to host: {exc}",
+            checked_at=datetime.now(timezone.utc),
+        )
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        return CheckResult(
+            passed=False,
+            status_code=None,
+            status_phrase="Request Error",
+            latency_ms=latency_ms,
+            error_reason=str(exc),
+            checked_at=datetime.now(timezone.utc),
+        )
+
+    # Base response extracted
+    status_code = response.status_code
+    status_phrase = response.reason_phrase or "OK"
+    expect = target.expect
+
+    # 1. Status code validation
+    passed, reason = _check_status_code(expect.status_code, status_code)
+    if not passed:
+        return CheckResult(
+            passed=False,
+            status_code=status_code,
+            status_phrase=status_phrase,
+            latency_ms=latency_ms,
+            error_reason=reason,
+            checked_at=datetime.now(timezone.utc),
+        )
+
+    # 2. Latency check
+    if expect.max_latency_ms is not None and latency_ms > expect.max_latency_ms:
+        return CheckResult(
+            passed=False,
+            status_code=status_code,
+            status_phrase=status_phrase,
+            latency_ms=latency_ms,
+            error_reason=(
+                f"Response latency {latency_ms:.0f} ms exceeded limit {expect.max_latency_ms:.0f} ms"
+            ),
+            checked_at=datetime.now(timezone.utc),
+        )
+
+    # 3. Text search
+    if expect.contains_text is not None:
+        if expect.contains_text not in response.text:
+            return CheckResult(
+                passed=False,
+                status_code=status_code,
+                status_phrase=status_phrase,
+                latency_ms=latency_ms,
+                error_reason=f"Missing expected text: '{expect.contains_text}'",
+                checked_at=datetime.now(timezone.utc),
+            )
+
+    # 4. Regex pattern matching
+    if expect.regex is not None:
+        if not re.search(expect.regex, response.text):
+            return CheckResult(
+                passed=False,
+                status_code=status_code,
+                status_phrase=status_phrase,
+                latency_ms=latency_ms,
+                error_reason=f"Response body failed to match regex: '{expect.regex}'",
+                checked_at=datetime.now(timezone.utc),
+            )
+
+    # 5. JSON schema assertions
+    if expect.json_match is not None:
+        try:
+            parsed_json = response.json()
+        except Exception:
+            return CheckResult(
+                passed=False,
+                status_code=status_code,
+                status_phrase=status_phrase,
+                latency_ms=latency_ms,
+                error_reason="Response body is not valid JSON",
+                checked_at=datetime.now(timezone.utc),
+            )
+
+        matched, json_err = _match_json_structure(expect.json_match, parsed_json)
+        if not matched:
+            return CheckResult(
+                passed=False,
+                status_code=status_code,
+                status_phrase=status_phrase,
+                latency_ms=latency_ms,
+                error_reason=json_err,
+                checked_at=datetime.now(timezone.utc),
+            )
+
+    # 6. SSL Certificate check
+    ssl_days: int | None = None
+    if expect.ssl_check and url.lower().startswith("https://"):
+        try:
+            ssl_days = await get_ssl_days_left(url, timeout=min(timeout, 5.0))
+            if ssl_days <= expect.ssl_warn_days:
+                return CheckResult(
+                    passed=False,
+                    status_code=status_code,
+                    status_phrase=status_phrase,
+                    latency_ms=latency_ms,
+                    error_reason=(
+                        f"SSL certificate expires in {ssl_days} days (threshold: {expect.ssl_warn_days} days)"
+                    ),
+                    ssl_days_left=ssl_days,
+                    checked_at=datetime.now(timezone.utc),
+                )
+        except Exception as exc:
+            return CheckResult(
+                passed=False,
+                status_code=status_code,
+                status_phrase=status_phrase,
+                latency_ms=latency_ms,
+                error_reason=f"SSL certificate check failed: {exc}",
+                checked_at=datetime.now(timezone.utc),
+            )
+
+    return CheckResult(
+        passed=True,
+        status_code=status_code,
+        status_phrase=status_phrase,
+        latency_ms=latency_ms,
+        ssl_days_left=ssl_days,
+        checked_at=datetime.now(timezone.utc),
+    )

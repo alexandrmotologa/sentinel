@@ -1,0 +1,46 @@
+# Sentinel Monitoring Configuration Example
+global:
+  default_interval: 60s            # Default check interval (e.g., 30s, 1m, 5m)
+  default_timeout: 10s             # Default request timeout
+  consecutive_failures_to_alert: 2 # Debounce: alert triggered after 2 consecutive failures
+  daily_summary_time: "09:00"      # Optional daily summary notification time in UTC
+
+telegram:
+  bot_token: "env:TELEGRAM_BOT_TOKEN" # Resolves environment variable
+  chat_id: "env:TELEGRAM_CHAT_ID"     # Destination chat or channel ID
+  send_silently: false                # When true, delivers recovery alerts without sound
+  enabled: true
+
+targets:
+  - name: "Production API Health"
+    url: "https://api.example.com/health"
+    interval: 30s
+    timeout: 5s
+    method: "GET"
+    headers:
+      Authorization: "Bearer env:API_SECRET"
+    expect:
+      status_code: 200
+      max_latency_ms: 1500
+      json:
+        status: "ok"
+        database: "connected"
+
+  - name: "Landing Page"
+    url: "https://example.com"
+    interval: 60s
+    expect:
+      status_code: 200
+      contains_text: "Example Domain"
+      ssl_check: true
+      ssl_warn_days: 14
+
+  - name: "Stripe Webhook Listener"
+    url: "https://hooks.example.com/ping"
+    interval: 45s
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    body: '{"test": true}'
+    expect:
+      status_code: [200, 201, 204]
