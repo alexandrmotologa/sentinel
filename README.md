@@ -7,7 +7,7 @@
 Sentinel is an asynchronous uptime and API health monitoring daemon written in Python 3.12. It monitors multiple endpoints concurrently, validates status codes, latency thresholds, text presence, JSON payload assertions, and SSL certificate expiration, and dispatches multi-channel alerts with stateful flap protection.
 
 <p align="center">
-  <img src="docs/screenshots/01_dashboard.png" alt="Sentinel Live TUI Dashboard" width="860">
+  <img src="docs/images/sentinel_demo.gif" alt="Sentinel Interactive Terminal Dashboard Demo" width="850" />
 </p>
 
 ## Features

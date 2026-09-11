@@ -50,3 +50,6 @@ Thumbs.db
 *.log
 .sentinel.heartbeat
 sites.local.yaml
+
+# Master demo video recording
+*.mp4
