@@ -146,7 +146,7 @@ def extract_rich_components(full_html: str) -> tuple[str, str]:
 
 def generate_dashboard_view(dest_html: Path) -> None:
     buf = io.StringIO()
-    console = Console(record=True, width=110, file=buf, force_terminal=True)
+    console = Console(record=True, width=118, file=buf, force_terminal=True)
     cfg = SentinelConfig.load_yaml(Path("sites.example.yaml"))
     engine = SentinelEngine(cfg)
 
@@ -155,6 +155,7 @@ def generate_dashboard_view(dest_html: Path) -> None:
     api_state.successful_checks = 480
     api_state.status = TargetStatus.UP
     api_state.last_latency_ms = 45.2
+    api_state.total_latency_ms = 45.2 * 480
     api_state.last_status_code = 200
 
     web_state = TargetState(name="Landing Page", url="https://example.com")
@@ -162,6 +163,7 @@ def generate_dashboard_view(dest_html: Path) -> None:
     web_state.successful_checks = 239
     web_state.status = TargetStatus.UP
     web_state.last_latency_ms = 112.8
+    web_state.total_latency_ms = 112.8 * 240
     web_state.last_status_code = 200
 
     stripe_state = TargetState(name="Stripe Webhook Listener", url="https://hooks.example.com")
@@ -170,6 +172,7 @@ def generate_dashboard_view(dest_html: Path) -> None:
     stripe_state.status = TargetStatus.DOWN
     stripe_state.consecutive_failures = 3
     stripe_state.last_latency_ms = 502.4
+    stripe_state.total_latency_ms = 502.4 * 320
     stripe_state.last_status_code = 503
     stripe_state.last_error_reason = "Expected status 200, got 503 Service Unavailable"
     stripe_state.down_since = datetime.now(timezone.utc)
@@ -179,12 +182,14 @@ def generate_dashboard_view(dest_html: Path) -> None:
     pg_state.successful_checks = 480
     pg_state.status = TargetStatus.UP
     pg_state.last_latency_ms = 12.1
+    pg_state.total_latency_ms = 12.1 * 480
 
     redis_state = TargetState(name="Redis Cache Cluster", url="tcp://127.0.0.1:6379")
     redis_state.total_checks = 960
     redis_state.successful_checks = 960
     redis_state.status = TargetStatus.UP
     redis_state.last_latency_ms = 2.4
+    redis_state.total_latency_ms = 2.4 * 960
 
     engine.states = {
         "Production API Health": api_state,

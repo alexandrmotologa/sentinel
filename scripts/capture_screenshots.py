@@ -8,7 +8,7 @@ from pathlib import Path
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 DOCS_DIR = Path("docs/screenshots")
-ARTIFACT_DIR = Path(r"C:\Users\alexander\.gemini\antigravity-ide\brain\3589a361-1b83-4765-bff8-321a66f13cc2")
+ARTIFACT_DIR = Path(r"C:\Users\alexander\.gemini\antigravity-ide\brain\c44dba44-d2f9-407b-a59c-773a3075917a")
 
 VIEWS = [
     ("01_dashboard.html", "01_dashboard.png", 1180, 720),

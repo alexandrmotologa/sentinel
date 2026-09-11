@@ -85,31 +85,31 @@ pre, code {
         <div class="title">sentinel run --dashboard sites.yaml</div>
     </div>
     <div class="terminal-body">
-        <pre style="font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><code style="font-family:inherit"><span class="r1">┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┐</span>
-<span class="r1">│ </span><span class="r2">🛡️  SENTINEL MONITORING DAEMON</span><span class="r3">  |  Uptime: 4 hours</span><span class="r4">  |  Services: 4/5 Healthy</span><span class="r5">  |  Avg Uptime: 99.3%</span><span class="r3">  |  </span><span class="r1">    │</span>
-<span class="r1">└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</span>
-┌─────────────────────────────────────────── Monitored Endpoints ────────────────────────────────────────────┐
-│ ┌────────────────┬──────────┬──────────────┬──────────────┬───────────┬───────────┬──────────────────────┐ │
-│ │<span class="r6"> Target         </span>│<span class="r6">  Status  </span>│<span class="r6">      Latency </span>│<span class="r6">  Avg Latency </span>│<span class="r6">    Uptime </span>│<span class="r6"> Failures  </span>│<span class="r6"> Details              </span>│ │
-│ ├────────────────┼──────────┼──────────────┼──────────────┼───────────┼───────────┼──────────────────────┤ │
-│ │<span class="r5"> Production API </span>│    <span class="r7">UP</span>    │       <span class="r8">  45ms</span> │          0ms │    100.0% │     0     │<span class="r9"> HTTP 200 - All       </span>│ │
-│ │<span class="r5"> Health         </span>│          │              │              │           │           │<span class="r9"> checks passing       </span>│ │
-│ │<span class="r5"> Landing Page   </span>│    <span class="r7">UP</span>    │      <span class="r8">  112ms</span> │          0ms │     99.6% │     0     │<span class="r9"> HTTP 200 - All       </span>│ │
-│ │<span class="r5">                </span>│          │              │              │           │           │<span class="r9"> checks passing       </span>│ │
-│ │<span class="r5"> Stripe Webhook </span>│   <span class="r6">DOWN</span>   │      <span class="r4">▄ 502ms</span> │          0ms │     96.9% │     3     │<span class="r9"> HTTP 503 - All       </span>│ │
-│ │<span class="r5"> Listener       </span>│          │              │              │           │           │<span class="r9"> checks passing       </span>│ │
-│ │<span class="r5"> Primary        </span>│    <span class="r7">UP</span>    │       <span class="r8">  12ms</span> │          0ms │    100.0% │     0     │<span class="r9"> All checks passing   </span>│ │
-│ │<span class="r5"> PostgreSQL     </span>│          │              │              │           │           │<span class="r9">                      </span>│ │
-│ │<span class="r5"> Redis Cache    </span>│    <span class="r7">UP</span>    │        <span class="r8">  2ms</span> │          0ms │    100.0% │     0     │<span class="r9"> All checks passing   </span>│ │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-<span class="r9">┌─────────────────────────────────────────── Recent Alert Events ────────────────────────────────────────────┐</span>
-<span class="r9">│  01:37:06         Telegram alert dispatched to chat -100123456789                                          │</span>
-<span class="r9">│  01:37:06         OUTAGE: Stripe Webhook Listener returned 503 Service Unavailable                         │</span>
-<span class="r9">│  01:37:06         Prometheus metrics server active on http://0.0.0.0:9090                                  │</span>
-<span class="r9">│  01:37:06         Daemon initialized with 5 targets (3 HTTP, 2 TCP)                                        │</span>
-<span class="r9">│                                                                                                            │</span>
-<span class="r9">│                                                                                                            │</span>
-<span class="r9">└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</span>
+        <pre style="font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><code style="font-family:inherit"><span class="r1">┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="r1">│ </span><span class="r2">🛡️  SENTINEL MONITORING DAEMON</span><span class="r3">  |  Uptime: 4 hours</span><span class="r4">  |  Services: 4/5 Healthy</span><span class="r5">  |  Avg Uptime: 99.3%</span><span class="r3">  |  Alert </span><span class="r1">      │</span>
+<span class="r1">└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</span>
+┌─────────────────────────────────────────────── Monitored Endpoints ────────────────────────────────────────────────┐
+│ ┌───────────────────┬──────────┬──────────────┬──────────────┬───────────┬───────────┬───────────────────────────┐ │
+│ │<span class="r6"> Target            </span>│<span class="r6">  Status  </span>│<span class="r6">      Latency </span>│<span class="r6">  Avg Latency </span>│<span class="r6">    Uptime </span>│<span class="r6"> Failures  </span>│<span class="r6"> Details                   </span>│ │
+│ ├───────────────────┼──────────┼──────────────┼──────────────┼───────────┼───────────┼───────────────────────────┤ │
+│ │<span class="r5"> Production API    </span>│    <span class="r7">UP</span>    │       <span class="r8">  45ms</span> │         45ms │    100.0% │     0     │<span class="r9"> HTTP 200 - All checks     </span>│ │
+│ │<span class="r5"> Health            </span>│          │              │              │           │           │<span class="r9"> passing                   </span>│ │
+│ │<span class="r5"> Landing Page      </span>│    <span class="r7">UP</span>    │      <span class="r8">  112ms</span> │        112ms │     99.6% │     0     │<span class="r9"> HTTP 200 - All checks     </span>│ │
+│ │<span class="r5">                   </span>│          │              │              │           │           │<span class="r9"> passing                   </span>│ │
+│ │<span class="r5"> Stripe Webhook    </span>│   <span class="r6">DOWN</span>   │      <span class="r4">▄ 502ms</span> │        502ms │     96.9% │     3     │<span class="r9"> HTTP 503 - Expected       </span>│ │
+│ │<span class="r5"> Listener          </span>│          │              │              │           │           │<span class="r9"> status 200, got 503       </span>│ │
+│ │<span class="r5">                   </span>│          │              │              │           │           │<span class="r9"> Service Un...             </span>│ │
+│ │<span class="r5"> Primary           </span>│    <span class="r7">UP</span>    │       <span class="r8">  12ms</span> │         12ms │    100.0% │     0     │<span class="r9"> All checks passing        </span>│ │
+│ │<span class="r5"> PostgreSQL        </span>│          │              │              │           │           │<span class="r9">                           </span>│ │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+<span class="r9">┌─────────────────────────────────────────────── Recent Alert Events ────────────────────────────────────────────────┐</span>
+<span class="r9">│  16:23:57          Telegram alert dispatched to chat -100123456789                                                 │</span>
+<span class="r9">│  16:23:57          OUTAGE: Stripe Webhook Listener returned 503 Service Unavailable                                │</span>
+<span class="r9">│  16:23:57          Prometheus metrics server active on http://0.0.0.0:9090                                         │</span>
+<span class="r9">│  16:23:57          Daemon initialized with 5 targets (3 HTTP, 2 TCP)                                               │</span>
+<span class="r9">│                                                                                                                    │</span>
+<span class="r9">│                                                                                                                    │</span>
+<span class="r9">└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</span>
 </code></pre>
     </div>
 </div>

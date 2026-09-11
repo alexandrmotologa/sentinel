@@ -1,10 +1,19 @@
-# Sentinel
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="Sentinel Mascot Logo" width="130" style="border-radius: 24px;" />
+</p>
 
-[![CI](https://github.com/alexandrmotologa/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandrmotologa/sentinel/actions/workflows/ci.yml)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<h1 align="center">Sentinel</h1>
 
-Sentinel is an asynchronous uptime and API health monitoring daemon written in Python 3.12. It monitors multiple endpoints concurrently, validates status codes, latency thresholds, text presence, JSON payload assertions, and SSL certificate expiration, and dispatches multi-channel alerts with stateful flap protection.
+<p align="center">
+  <a href="https://github.com/alexandrmotologa/sentinel/actions/workflows/ci.yml"><img src="https://github.com/alexandrmotologa/sentinel/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12%2B-blue.svg" alt="Python 3.12+"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <strong>Lightweight 24/7 Asynchronous Uptime &amp; API Health Monitoring Daemon</strong><br>
+  Continuous multi-endpoint surveillance, latency threshold assertions, SSL certificate tracking, and multi-channel alerting with stateful flap protection.
+</p>
 
 <p align="center">
   <img src="docs/images/sentinel_demo.gif" alt="Sentinel Interactive Terminal Dashboard Demo" width="850" />

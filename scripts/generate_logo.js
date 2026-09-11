@@ -1,0 +1,274 @@
+const fs = require('fs');
+const path = require('path');
+const { Resvg } = require('@resvg/resvg-js');
+
+function buildSentinelLogoSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Squircle container clipping -->
+    <clipPath id="squircle-clip">
+      <rect x="24" y="24" width="976" height="976" rx="220" />
+    </clipPath>
+
+    <!-- Electric Cyan Optic & Telemetry Pulse Gradients -->
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="40%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="cyan-ear" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#0284c7" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.1"/>
+    </linearGradient>
+
+    <!-- Volumetric High-Contrast Obsidian & Slate Lighting Gradients -->
+    <linearGradient id="g-bright" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#94a3b8"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+
+    <linearGradient id="g-lit" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+
+    <linearGradient id="g-mid-lit" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+
+    <linearGradient id="g-mid" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+
+    <linearGradient id="g-shadow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+
+    <linearGradient id="g-dark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#060913"/>
+    </linearGradient>
+
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#070a12" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Luxury White Squircle Container -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="6" />
+
+  <g clip-path="url(#squircle-clip)">
+    <g transform="translate(512, 512)" filter="url(#subtle-shadow)">
+
+      <!-- Hexagonal Architectural Gateway Frame -->
+      <polygon points="
+        0,-415
+        360,-208
+        360,208
+        0,415
+        -360,208
+        -360,-208
+      " fill="none" stroke="#0f172a" stroke-width="36" stroke-linejoin="round" />
+
+      <polygon points="
+        0,-380
+        328,-190
+        328,190
+        0,380
+        -328,190
+        -328,-190
+      " fill="none" stroke="#00f5ff" stroke-width="4" opacity="0.45" stroke-dasharray="16, 12" />
+
+      <!-- ============================================================== -->
+      <!-- 1. BASE SOLID SILHOUETTES (100% WATERTIGHT - NO HOLES)         -->
+      <!-- ============================================================== -->
+
+      <!-- Muscular Neck & Shoulder Base -->
+      <path d="
+        M -120,60
+        L -165,180
+        L -245,360
+        L 0,400
+        L 245,360
+        L 165,180
+        L 120,60
+        Z
+      " fill="url(#g-dark)" />
+
+      <!-- Right Side Neck Highlight -->
+      <path d="
+        M 0,200
+        L 120,60
+        L 165,180
+        L 245,360
+        L 0,400
+        Z
+      " fill="url(#g-shadow)" />
+
+      <!-- Solid Canine Head Base Silhouette -->
+      <path d="
+        M 0,-215
+        L 65,-185
+        L 160,-385
+        L 175,-160
+        L 130,-20
+        L 105,75
+        L 38,145
+        L 0,165
+        L -38,145
+        L -105,75
+        L -130,-20
+        L -175,-160
+        L -160,-385
+        L -65,-185
+        Z
+      " fill="url(#g-dark)" />
+
+      <!-- ============================================================== -->
+      <!-- 2. VOLUMETRIC FACETS & FACIAL PLANES (DOBERMAN WATCHDOG)       -->
+      <!-- ============================================================== -->
+
+      <!-- CROWN & FOREHEAD (High contrast lighting) -->
+      <polygon points="0,-215 65,-185 85,-110 0,-115" fill="url(#g-lit)" />
+      <polygon points="0,-215 -65,-185 -85,-110 0,-115" fill="url(#g-dark)" />
+
+      <polygon points="0,-115 85,-110 70,-45 0,-40" fill="url(#g-bright)" />
+      <polygon points="0,-115 -85,-110 -70,-45 0,-40" fill="url(#g-shadow)" />
+
+      <!-- TEMPLES & BROW RIDGES -->
+      <polygon points="65,-185 175,-160 130,-20 85,-110" fill="url(#g-mid-lit)" />
+      <polygon points="-65,-185 -175,-160 -130,-20 -85,-110" fill="url(#g-dark)" />
+
+      <polygon points="85,-110 130,-20 60,-20 70,-45" fill="url(#g-lit)" />
+      <polygon points="-85,-110 -130,-20 -60,-20 -70,-45" fill="url(#g-dark)" />
+
+      <!-- EARS: INTERNAL TELEMETRY RADAR CONTOURS -->
+      <!-- Left Ear Front Plane -->
+      <polygon points="-160,-385 -175,-160 -125,-175" fill="#04060c" />
+      <polygon points="-160,-385 -125,-175 -65,-185" fill="url(#g-dark)" />
+      <!-- Left Ear Inner Radar Sheen -->
+      <polygon points="-152,-350 -115,-180 -75,-185" fill="url(#cyan-ear)" />
+
+      <!-- Right Ear Front Plane (Lit) -->
+      <polygon points="160,-385 175,-160 125,-175" fill="url(#g-shadow)" />
+      <polygon points="160,-385 125,-175 65,-185" fill="url(#g-lit)" />
+      <!-- Right Ear Inner Radar Sheen -->
+      <polygon points="152,-350 115,-180 75,-185" fill="url(#cyan-ear)" />
+
+      <!-- CHEEKS & JAWLINE -->
+      <polygon points="130,-20 105,75 55,55 60,-20" fill="url(#g-mid-lit)" />
+      <polygon points="-130,-20 -105,75 -55,55 -60,-20" fill="url(#g-dark)" />
+
+      <!-- SNOUT / NOSE BRIDGE (Athletic, powerful canine wedge) -->
+      <!-- Center Bridge Ridge -->
+      <polygon points="0,-40 28,-35 25,75 0,82" fill="url(#g-bright)" />
+      <polygon points="0,-40 -28,-35 -25,75 0,82" fill="url(#g-shadow)" />
+
+      <!-- Snout Lateral Walls -->
+      <polygon points="28,-35 60,-20 55,55 25,75" fill="url(#g-lit)" />
+      <polygon points="-28,-35 -60,-20 -55,55 -25,75" fill="url(#g-dark)" />
+
+      <!-- EYES (PIERCING GUARDIAN OPTICS) -->
+      <!-- Left Eye Housing -->
+      <polygon points="-75,-45 -62,-18 -26,-32 -42,-50" fill="#020408" />
+      <!-- Left Eye Glowing Iris -->
+      <polygon points="-70,-41 -60,-22 -30,-32 -44,-46" fill="url(#cyan-glow)" />
+      <circle cx="-50" cy="-32" r="4" fill="#ffffff" />
+
+      <!-- Right Eye Housing -->
+      <polygon points="75,-45 62,-18 26,-32 42,-50" fill="#020408" />
+      <!-- Right Eye Glowing Iris -->
+      <polygon points="70,-41 60,-22 30,-32 44,-46" fill="url(#cyan-glow)" />
+      <circle cx="50" cy="-32" r="4" fill="#ffffff" />
+
+      <!-- NOSE PAD (BLACK CANINE TRUFFLE) -->
+      <polygon points="0,82 25,75 32,108 0,122" fill="#1e293b" />
+      <polygon points="0,82 -25,75 -32,108 0,122" fill="#060913" />
+      <!-- Top Specular Highlight on Nose Bridge -->
+      <polygon points="0,83 -20,78 0,89 20,78" fill="#38bdf8" opacity="0.95" />
+      <!-- Left & Right Nostril Accents -->
+      <polygon points="-22,102 -10,110 -18,116" fill="#000000" />
+      <polygon points="22,102 10,110 18,116" fill="#070a12" />
+
+      <!-- MUZZLE LIPS & CHIN -->
+      <!-- Upper Lips (Clean Philtrum) -->
+      <polygon points="0,122 32,108 48,95 24,136 0,132" fill="url(#g-mid-lit)" />
+      <polygon points="0,122 -32,108 -48,95 -24,136 0,132" fill="url(#g-dark)" />
+
+      <!-- Chin Point -->
+      <polygon points="0,132 24,136 0,165" fill="url(#g-bright)" />
+      <polygon points="0,132 -24,136 0,165" fill="url(#g-shadow)" />
+
+      <!-- Jaw Under-Plates -->
+      <polygon points="48,95 105,75 38,145 24,136" fill="url(#g-lit)" />
+      <polygon points="-48,95 -105,75 -38,145 -24,136" fill="url(#g-dark)" />
+
+      <!-- Central Throat Contour -->
+      <polygon points="0,165 38,145 55,205 0,225" fill="url(#g-shadow)" />
+      <polygon points="0,165 -38,145 -55,205 0,225" fill="url(#g-dark)" />
+
+      <!-- ============================================================== -->
+      <!-- 3. GUARDIAN COLLAR & UPTIME HEARTBEAT TELEMETRY NODE            -->
+      <!-- ============================================================== -->
+      <!-- Armored Choker Band -->
+      <polygon points="-110,215 -45,210 0,220 45,210 110,215 70,255 0,265 -70,255" fill="#0f172a" stroke="#334155" stroke-width="2.5" />
+
+      <!-- Hexagonal Telemetry Jewel (Real-time Uptime Monitor) -->
+      <polygon points="
+        0,230
+        32,248
+        32,286
+        0,304
+        -32,286
+        -32,248
+      " fill="#060913" stroke="#00f5ff" stroke-width="3.5" />
+
+      <!-- Inner Glowing Pulse Core -->
+      <polygon points="
+        0,238
+        24,252
+        24,282
+        0,296
+        -24,282
+        -24,252
+      " fill="url(#cyan-glow)" />
+
+      <!-- Center White Ping Dot -->
+      <circle cx="0" cy="267" r="6" fill="#ffffff" />
+
+      <!-- Horizontal Telemetry Waveform Lines across Collar -->
+      <line x1="-32" y1="267" x2="-90" y2="267" stroke="#00f5ff" stroke-width="3" opacity="0.85" stroke-dasharray="6, 4" />
+      <line x1="32" y1="267" x2="90" y2="267" stroke="#00f5ff" stroke-width="3" opacity="0.85" stroke-dasharray="6, 4" />
+
+    </g>
+  </g>
+</svg>`;
+}
+
+function generateLogo() {
+  const imagesDir = path.join(__dirname, '..', 'docs', 'images');
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true });
+  }
+
+  const svg = buildSentinelLogoSvg();
+  const svgPath = path.join(imagesDir, 'logo.svg');
+  const pngPath = path.join(imagesDir, 'logo.png');
+
+  fs.writeFileSync(svgPath, svg, 'utf-8');
+  console.log(`Saved logo SVG to ${svgPath}`);
+
+  const resvg = new Resvg(svg, {
+    fitTo: { mode: 'width', value: 1024 }
+  });
+  const pngBuffer = resvg.render().asPng();
+  fs.writeFileSync(pngPath, pngBuffer);
+  console.log(`Rendered logo PNG to ${pngPath} (${pngBuffer.length} bytes, 1024x1024)`);
+}
+
+generateLogo();
