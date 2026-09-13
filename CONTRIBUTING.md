@@ -14,14 +14,16 @@ Please treat everyone in the community with respect, kindness, and constructive 
 
 ### 1. Reporting Bugs & Requesting Features
 - **Search existing issues** first to avoid duplicates.
-- **For bugs:** Open an issue describing the bug, including steps to reproduce, expected vs. actual behavior, and environment details (Python 3.12+ and environment details (OS, Python version)).
-- **For feature requests:** Describe the problem you are trying to solve and propose a solution or interface specification.
+- **For bugs:** Open an issue describing the bug, including steps to reproduce, expected vs. actual behavior, and environment details (OS, Python version).
+- **For feature requests:** Describe the monitoring probe, alert sink, or mesh protocol you would like to see implemented.
 
 ### 2. Pull Request Workflow
 
-1. **Fork the repository** and clone your fork locally:
+1. **Fork the repository** and clone locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/sentinel.git
+   git clone https://github.com/alexandrmotologa/sentinel.git
+   # Or clone your personal fork if preparing a pull request:
+   # git clone https://github.com/YOUR_USERNAME/sentinel.git
    cd sentinel
    ```
 
@@ -32,15 +34,15 @@ Please treat everyone in the community with respect, kindness, and constructive 
    ```
 
 3. **Follow commit conventions:** We follow [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat: implement support for dynamic configuration streaming`
-   - `fix: resolve race condition in background worker`
-   - `docs: update quick start instructions in README`
-   - `perf: optimize circular buffer throughput`
+   - `feat: add automatic incident escalation trigger for 5xx surges`
+   - `fix: prevent duplicate canary alerts during regional network flaps`
+   - `docs: improve multi-datacenter deployment topology in README`
+   - `perf: optimize sliding window aggregation in metrics buffer`
 
 4. **Ensure code quality:**
    - Keep code clean, readable, and strictly typed.
    - Verify that all existing and new unit tests pass before submitting.
-   - Run the local linter/formatter if available.
+   - Run the local linter/formatter (`ruff check . && ruff format --check .`).
 
 5. **Push and open a Pull Request:**
    - Push your branch to your fork:
