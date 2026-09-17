@@ -506,6 +506,7 @@ class TcpProbe(BaseProbe):
 # ---------------------------------------------------------------------------
 
 from sentinel.dns_probe import DnsProbe  # noqa: E402
+from sentinel.ping_probe import PingProbe, evaluate_ping_target  # noqa: E402
 
 
 async def evaluate_target(target: TargetConfig, client: httpx.AsyncClient) -> CheckResult:
@@ -521,3 +522,18 @@ async def evaluate_tcp_target(target: TCPTargetConfig) -> CheckResult:
 async def evaluate_dns_target(target: DNSTargetConfig) -> CheckResult:
     """Evaluate DNS name resolution and assertion rules via DnsProbe."""
     return await DnsProbe(target).check()
+
+
+__all__ = [
+    "BaseProbe",
+    "CheckResult",
+    "DnsProbe",
+    "HttpProbe",
+    "PingProbe",
+    "TcpProbe",
+    "create_async_client",
+    "evaluate_dns_target",
+    "evaluate_ping_target",
+    "evaluate_target",
+    "evaluate_tcp_target",
+]

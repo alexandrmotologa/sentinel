@@ -27,7 +27,11 @@
 - HTTP assertion rules: status code ranges, max latency, regex, text, and nested JSON keys
 - Direct TCP socket connectivity checks for databases (PostgreSQL, MySQL) and caches (Redis)
 - Native DNS resolution & propagation probes (`DnsProbe`) for A, AAAA, CNAME, MX, and TXT records
-- Built-in zero-dependency dark-mode Web Status Page (`/` and `/status`) with live client polling
+- Native cross-platform ICMP Ping probes (`PingProbe`) for routers, switches, and bare-metal hosts
+- Persistent incident history & SLA tracking with embedded SQLite in WAL mode (`sentinel incidents`)
+- Per-target alert channel routing (`notify`) and multi-level severity badges (`critical`, `warning`, `info`)
+- Scheduled maintenance windows & dynamic CLI alert muting (`sentinel mute`, `unmute`, `mutes`)
+- Built-in zero-dependency dark-mode Web Status Page (`/` and `/status`) with custom branding and past incidents timeline
 - Embedded metrics server exposing Prometheus `/metrics` and JSON `/healthz` endpoints
 - Multi-channel alerting: Telegram, generic webhooks, native Discord embeds, and Slack Block Kit
 - Real-time terminal dashboard (`sentinel run --dashboard`) powered by Rich
@@ -143,6 +147,8 @@ sentinel run sites.yaml --watch
 - [Architecture Guide](docs/architecture.md): Concurrency model, state transitions, and debounce logic.
 - [Configuration Reference](docs/configuration.md): Full syntax and options for `sites.yaml`.
 - [Metrics and Health](docs/metrics.md): Prometheus `/metrics` exposition, JSON `/healthz`, and Web Status Page.
+- [ICMP Ping Probes](docs/ping_checks.md): Cross-platform ICMP ping monitoring without root privileges.
+- [Maintenance & Muting](docs/maintenance.md): Scheduled windows and dynamic CLI alert suppression.
 - [DNS Resolution Probes](docs/dns_checks.md): Record validation and latency monitoring for A, AAAA, CNAME, MX, and TXT.
 - [TCP Socket Checks](docs/tcp_checks.md): Port monitoring for databases and backend services.
 - [Discord and Slack Alerts](docs/discord_slack.md): Webhook integration and message layouts.

@@ -240,3 +240,85 @@ dns_targets:
   - `expected_cname`: Target domain that CNAME must point to.
   - `max_latency_ms`: Maximum query round-trip latency in milliseconds.
 
+## ICMP Ping Targets
+
+Use `ping_targets` (alias `ping`) to execute async ICMP ping probes against servers, gateways, and network infrastructure:
+
+```yaml
+ping_targets:
+  - name: "Edge Router"
+    host: "192.168.1.1"
+    count: 3
+    interval: 30s
+    timeout: 2s
+    expect:
+      max_latency_ms: 20
+      max_packet_loss_percent: 0
+    notify: ["telegram"]
+    severity: "warning"
+```
+
+- `name`: Unique identifier for the ping target.
+- `host`: Hostname or IP address.
+- `count`: Number of ICMP echo requests sent per probe cycle (1–10). Default is `1`.
+- `interval`: Interval between checks. Default is `60s`.
+- `timeout`: Ping subprocess execution timeout in seconds. Default is `5s`.
+- `expect.max_latency_ms`: Maximum allowed average round-trip latency (ms).
+- `expect.max_packet_loss_percent`: Maximum allowable packet loss percentage (0–100).
+- `notify`: Channel filter list (`["telegram", "slack"]`). Empty means all.
+- `severity`: Alert severity tier (`"critical"`, `"warning"`, or `"info"`).
+
+## Maintenance Windows
+
+Suppress alert notifications during planned downtime:
+
+```yaml
+maintenance:
+  - name: "database-vacuum"
+    targets: ["Primary PostgreSQL"]
+    schedule: "daily 02:00-03:00 UTC"
+    reason: "Nightly automated vacuum"
+
+  - name: "cluster-upgrade"
+    targets: ["*"]
+    schedule: "weekly sun 01:00-03:00 UTC"
+    reason: "Node OS updates"
+```
+
+- `name`: Descriptive maintenance title.
+- `targets`: Target names or `["*"]` for all targets.
+- `schedule`: Window expression (`daily HH:MM-HH:MM`, `weekly [day] HH:MM-HH:MM`, or ISO range `2026-10-01T12:00:00Z/2026-10-01T14:00:00Z`).
+- `reason`: Explanation displayed in logs and the Web Status Page.
+
+## Status Page Branding
+
+Customize the embedded Web Status Page served at `/status`:
+
+```yaml
+status_page:
+  title: "Acme Global Status"
+  company_name: "Acme Corp"
+  logo_url: "https://acme.example.com/logo.svg"
+  announcement: "Scheduled database maintenance tonight at 02:00 UTC."
+  announcement_type: "info" # 'info', 'warning', or 'outage'
+  custom_css: ""            # Optional custom CSS overrides
+```
+
+- `title`: Page title and header branding text.
+- `company_name`: Subtitle company branding.
+- `logo_url`: URL or data URI for custom brand icon.
+- `announcement`: System-wide notification banner displayed at top of page.
+- `announcement_type`: Visual banner styling (`info`, `warning`, `outage`).
+
+## Incident Persistence (SQLite)
+
+In `global:`, configure `db_path` to record all outages, recoveries, and probe samples:
+
+```yaml
+global:
+  db_path: "sentinel.db" # Persistent SQLite database (WAL mode)
+```
+
+Past incidents over the last 7 days are automatically rendered on the Web Status Page timeline and can be queried via CLI: `sentinel incidents --days 7`.
+
+

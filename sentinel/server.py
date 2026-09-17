@@ -132,23 +132,48 @@ class HttpServerResponse:
 
 
 class MetricsServer:
-    """Lightweight zero-dependency async HTTP server serving /metrics and /healthz."""
+    """Lightweight zero-dependency async HTTP server serving /metrics, /healthz, and status page."""
 
     def __init__(
         self,
         host: str,
         port: int,
         state_provider: Callable[[], dict[str, TargetState]],
+        status_page_config: Any | None = None,
+        incident_store: Any | None = None,
+        maintenance_manager: Any | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.state_provider = state_provider
+        self.status_page_config = status_page_config
+        self.incident_store = incident_store
+        self.maintenance_manager = maintenance_manager
         self.server: asyncio.Server | None = None
 
     def _route_request(self, path: str, states: dict[str, TargetState]) -> HttpServerResponse:
         """Route incoming URL path to appropriate exporter response."""
         if path in ("/", "/status", "/status/"):
-            html = generate_status_page(states)
+            incidents = None
+            if self.incident_store:
+                try:
+                    incidents = self.incident_store.get_recent_incidents(days=7)
+                except Exception as exc:
+                    logger.debug("Failed retrieving incidents: %s", exc)
+
+            active_mutes = None
+            if self.maintenance_manager:
+                try:
+                    active_mutes = [m["target"] for m in self.maintenance_manager.get_active_mutes()]
+                except Exception as exc:
+                    logger.debug("Failed retrieving mutes: %s", exc)
+
+            html = generate_status_page(
+                states,
+                config=self.status_page_config,
+                incidents=incidents,
+                active_mutes=active_mutes,
+            )
             return HttpServerResponse(
                 status_code=200,
                 status_text="OK",

@@ -83,6 +83,10 @@ class GlobalConfig(BaseModel):
         default=None,
         description="Daily summary notification time in UTC (format HH:MM)",
     )
+    db_path: str | None = Field(
+        default=None,
+        description="Filesystem path to SQLite history database (defaults to ~/.sentinel/history.db)",
+    )
 
     @field_validator("default_interval", "default_timeout", mode="before")
     @classmethod
@@ -181,6 +185,14 @@ class BaseTargetConfig(BaseModel):
     timeout: float | None = Field(
         default=None, description="Connection timeout in seconds (overrides global default)"
     )
+    notify: list[str] = Field(
+        default_factory=list,
+        description="Specific notification channels to alert for this target (e.g. ['telegram', 'slack']). Empty means all.",
+    )
+    severity: Literal["critical", "warning", "info"] = Field(
+        default="critical",
+        description="Alert severity tier ('critical', 'warning', or 'info')",
+    )
 
     @field_validator("interval", "timeout", mode="before")
     @classmethod
@@ -195,6 +207,25 @@ class TCPTargetConfig(BaseTargetConfig):
 
     host: str = Field(..., description="Target hostname or IP address")
     port: int = Field(..., ge=1, le=65535, description="Target TCP port")
+
+
+class PingExpectConfig(BaseModel):
+    """Assertions evaluated against ICMP ping round-trip measurements."""
+
+    max_latency_ms: float | None = Field(
+        default=None, description="Maximum allowable ping round-trip time in milliseconds"
+    )
+    max_packet_loss_percent: float | None = Field(
+        default=None, ge=0.0, le=100.0, description="Maximum allowable packet loss percentage"
+    )
+
+
+class PingTargetConfig(BaseTargetConfig):
+    """ICMP network ping monitoring target."""
+
+    host: str = Field(..., description="Target hostname or IP address to ping")
+    count: int = Field(default=1, ge=1, le=10, description="Number of ICMP packets to transmit per check")
+    expect: PingExpectConfig = Field(default_factory=PingExpectConfig)
 
 
 class ExpectConfig(BaseModel):
@@ -268,6 +299,14 @@ class DNSTargetConfig(BaseModel):
     timeout: float = Field(default=5.0, ge=0.5, description="DNS query timeout in seconds")
     expect: DNSExpectConfig = Field(default_factory=DNSExpectConfig)
     flap_threshold: int = Field(default=2, ge=1)
+    notify: list[str] = Field(
+        default_factory=list,
+        description="Specific notification channels to alert for this target. Empty means all.",
+    )
+    severity: Literal["critical", "warning", "info"] = Field(
+        default="critical",
+        description="Alert severity tier ('critical', 'warning', or 'info')",
+    )
 
     @field_validator("interval", "timeout", mode="before")
     @classmethod
@@ -284,6 +323,47 @@ class DNSTargetConfig(BaseModel):
         return v
 
 
+class MaintenanceWindowConfig(BaseModel):
+    """Scheduled maintenance window definition for suppressing alerts."""
+
+    model_config = {"populate_by_name": True}
+
+    name: str = Field(default="", description="Descriptive name for the maintenance window")
+    targets: list[str] = Field(default_factory=list, description="Target names or ['*'] for all targets")
+    target: str = Field(default="*", description="Target name or '*' for all targets")
+    schedule: str = Field(..., description="Window schedule (e.g. 'daily 02:00-03:00 UTC', 'weekly sun 01:00-03:00')")
+    reason: str = Field(default="Scheduled maintenance", description="Reason for the maintenance window")
+
+    @model_validator(mode="after")
+    def _normalize_targets(self) -> MaintenanceWindowConfig:
+        if not self.targets and self.target:
+            self.targets = [self.target]
+        elif self.targets and not self.target:
+            self.target = self.targets[0]
+        return self
+
+
+class StatusPageConfig(BaseModel):
+    """Custom branding and announcements for Web Status Page."""
+
+    model_config = {"populate_by_name": True}
+
+    title: str = Field(default="Sentinel Status Page", description="Status page title")
+    company_name: str = Field(default="", description="Company or service display name")
+    logo_url: str = Field(default="", description="URL or data URI for custom logo")
+    announcement: str = Field(default="", alias="announcement_banner", description="Alert or announcement banner text")
+    announcement_type: Literal["info", "warning", "outage"] = Field(
+        default="info", description="Announcement banner visual style"
+    )
+    theme: Literal["dark", "light", "auto"] = Field(default="dark", description="Dashboard color theme")
+    custom_css: str = Field(default="", description="Optional custom CSS rules")
+
+    @property
+    def announcement_banner(self) -> str:
+        return self.announcement
+
+
+
 class SentinelConfig(BaseModel):
     """Top-level Sentinel daemon configuration schema."""
 
@@ -298,6 +378,9 @@ class SentinelConfig(BaseModel):
     targets: list[TargetConfig] = Field(default_factory=list)
     tcp_targets: list[TCPTargetConfig] = Field(default_factory=list)
     dns_targets: list[DNSTargetConfig] = Field(default_factory=list, alias="dns")
+    ping_targets: list[PingTargetConfig] = Field(default_factory=list, alias="ping")
+    maintenance: list[MaintenanceWindowConfig] = Field(default_factory=list)
+    status_page: StatusPageConfig = Field(default_factory=StatusPageConfig)
 
     @model_validator(mode="after")
     def _apply_global_defaults(self) -> SentinelConfig:
@@ -312,6 +395,11 @@ class SentinelConfig(BaseModel):
                 tcp.interval = self.global_config.default_interval
             if tcp.timeout is None:
                 tcp.timeout = self.global_config.default_timeout
+        for ping in self.ping_targets:
+            if ping.interval is None:
+                ping.interval = self.global_config.default_interval
+            if ping.timeout is None:
+                ping.timeout = self.global_config.default_timeout
         for dns in self.dns_targets:
             if dns.flap_threshold == 2 and self.global_config.consecutive_failures_to_alert != 2:
                 dns.flap_threshold = self.global_config.consecutive_failures_to_alert

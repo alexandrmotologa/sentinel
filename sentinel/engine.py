@@ -14,11 +14,13 @@ from typing import TYPE_CHECKING
 import httpx
 from rich.console import Console
 
-from sentinel.config import DNSTargetConfig, SentinelConfig, TargetConfig, TCPTargetConfig
-from sentinel.evaluator import BaseProbe, DnsProbe, HttpProbe, TcpProbe, create_async_client
+from sentinel.config import DNSTargetConfig, PingTargetConfig, SentinelConfig, TargetConfig, TCPTargetConfig
+from sentinel.evaluator import BaseProbe, DnsProbe, HttpProbe, PingProbe, TcpProbe, create_async_client
+from sentinel.maintenance import MaintenanceManager
 from sentinel.notifier import AlertDispatcher
 from sentinel.server import MetricsServer
 from sentinel.state import TargetState
+from sentinel.storage import IncidentStore
 
 if TYPE_CHECKING:
     from sentinel.dashboard import SentinelDashboard
@@ -100,7 +102,12 @@ class TargetWorker:
         dashboard: SentinelDashboard | None = None,
         is_tcp: bool = False,
         is_dns: bool = False,
+        is_ping: bool = False,
         display_endpoint: str = "",
+        notify_channels: list[str] | None = None,
+        severity: str = "critical",
+        incident_store: IncidentStore | None = None,
+        maintenance_manager: MaintenanceManager | None = None,
     ) -> None:
         self.name = name
         self.probe = probe
@@ -113,9 +120,21 @@ class TargetWorker:
         self.dashboard = dashboard
         self.is_tcp = is_tcp
         self.is_dns = is_dns
+        self.is_ping = is_ping
         self.display_endpoint = display_endpoint
+        self.notify_channels = notify_channels or []
+        self.severity = severity
+        self.incident_store = incident_store
+        self.maintenance_manager = maintenance_manager
 
-    def _log_console_check(self, result_passed: bool, latency_ms: float, error_reason: str | None, status_text: str) -> None:
+    def _log_console_check(
+        self,
+        result_passed: bool,
+        latency_ms: float,
+        error_reason: str | None,
+        status_text: str,
+        is_muted: bool = False,
+    ) -> None:
         """Print colored check outcome to console when dashboard is not active."""
         ts_str = datetime.now().strftime("%H:%M:%S")
         proto_tag = ""
@@ -123,17 +142,21 @@ class TargetWorker:
             proto_tag = " [bold blue]TCP[/bold blue]"
         elif self.is_dns:
             proto_tag = " [bold magenta]DNS[/bold magenta]"
+        elif self.is_ping:
+            proto_tag = " [bold rgb(249,115,22)]PING[/bold rgb(249,115,22)]"
+
+        mute_tag = " [bold yellow][MUTED][/bold yellow]" if is_muted else ""
 
         if result_passed:
             console.print(
-                f"[[dim]{ts_str}[/dim]] [green]PASS[/green]{proto_tag} {self.name} "
+                f"[[dim]{ts_str}[/dim]] [green]PASS[/green]{proto_tag}{mute_tag} {self.name} "
                 f"([cyan]{int(latency_ms)}ms[/cyan]) [dim]{self.display_endpoint}[/dim]"
             )
         else:
             reason = error_reason or "Check failed"
             status_disp = f"[yellow]{status_text}[/yellow] - " if status_text else ""
             console.print(
-                f"[[dim]{ts_str}[/dim]] [red]FAIL[/red]{proto_tag} {self.name} "
+                f"[[dim]{ts_str}[/dim]] [red]FAIL[/red]{proto_tag}{mute_tag} {self.name} "
                 f"[{self.state.consecutive_failures}/{self.debounce_threshold}] "
                 f"{status_disp}{reason}"
             )
@@ -145,33 +168,93 @@ class TargetWorker:
             should_outage, should_recovery = self.state.update(result, self.debounce_threshold)
             self.heartbeat.write()
 
+            is_muted = False
+            mute_reason = None
+            if self.maintenance_manager:
+                is_muted, mute_reason = self.maintenance_manager.is_muted(self.name)
+
             if not self.dashboard:
                 self._log_console_check(
                     result_passed=result.passed,
                     latency_ms=result.latency_ms,
                     error_reason=result.error_reason,
-                    status_text=result.http_status_text if (not self.is_tcp and not self.is_dns) else "",
+                    status_text=result.http_status_text if (not self.is_tcp and not self.is_dns and not self.is_ping) else "",
+                    is_muted=is_muted,
                 )
+
+            prefix = (
+                "TCP "
+                if self.is_tcp
+                else ("DNS " if self.is_dns else ("PING " if self.is_ping else ""))
+            )
 
             if should_outage:
-                prefix = "TCP " if self.is_tcp else ("DNS " if self.is_dns else "")
-                if self.dashboard:
-                    self.dashboard.record_event(
-                        "outage", f"{prefix}{self.name} failed: {result.error_reason}"
-                    )
+                if self.incident_store:
+                    try:
+                        self.incident_store.record_outage_start(
+                            target_name=self.name,
+                            target_url=self.state.url,
+                            error_reason=result.error_reason or "Health check failed",
+                            severity=self.severity,
+                            started_at=result.checked_at,
+                        )
+                    except Exception as exc:
+                        logger.debug("Failed recording outage in storage: %s", exc)
+
+                if is_muted:
+                    if not self.dashboard:
+                        console.print(
+                            f"[bold yellow]>>> Outage alert suppressed for {prefix}{self.name} "
+                            f"({mute_reason})[/bold yellow]"
+                        )
                 else:
-                    console.print(f"[bold red]>>> Outage alert dispatched for {prefix}{self.name}[/bold red]")
-                asyncio.create_task(
-                    self.notifier.send_outage_alert(self.state, self.debounce_threshold)
-                )
+                    if self.dashboard:
+                        self.dashboard.record_event(
+                            "outage", f"{prefix}{self.name} failed: {result.error_reason}"
+                        )
+                    else:
+                        console.print(
+                            f"[bold red]>>> Outage alert dispatched for {prefix}{self.name} "
+                            f"[{self.severity.upper()}][/bold red]"
+                        )
+                    asyncio.create_task(
+                        self.notifier.send_outage_alert(
+                            self.state,
+                            self.debounce_threshold,
+                            channels=self.notify_channels,
+                            severity=self.severity,
+                        )
+                    )
 
             if should_recovery:
-                prefix = "TCP " if self.is_tcp else ("DNS " if self.is_dns else "")
-                if self.dashboard:
-                    self.dashboard.record_event("recovery", f"{prefix}{self.name} recovered")
+                if self.incident_store:
+                    try:
+                        self.incident_store.record_recovery(
+                            target_name=self.name,
+                            resolved_at=result.checked_at,
+                            duration_seconds=self.state.previous_downtime_seconds,
+                        )
+                    except Exception as exc:
+                        logger.debug("Failed recording recovery in storage: %s", exc)
+
+                if is_muted:
+                    if not self.dashboard:
+                        console.print(
+                            f"[bold yellow]>>> Recovery alert suppressed for {prefix}{self.name} "
+                            f"({mute_reason})[/bold yellow]"
+                        )
                 else:
-                    console.print(f"[bold green]>>> Recovery alert dispatched for {prefix}{self.name}[/bold green]")
-                asyncio.create_task(self.notifier.send_recovery_alert(self.state))
+                    if self.dashboard:
+                        self.dashboard.record_event("recovery", f"{prefix}{self.name} recovered")
+                    else:
+                        console.print(f"[bold green]>>> Recovery alert dispatched for {prefix}{self.name}[/bold green]")
+                    asyncio.create_task(
+                        self.notifier.send_recovery_alert(
+                            self.state,
+                            channels=self.notify_channels,
+                            severity=self.severity,
+                        )
+                    )
 
             try:
                 await asyncio.wait_for(self.stop_event.wait(), timeout=self.interval)
@@ -191,6 +274,9 @@ class SentinelEngine:
             config.discord,
             config.slack,
         )
+        self.incident_store = IncidentStore(config.global_config.db_path)
+        self.maintenance_manager = MaintenanceManager(config.maintenance)
+
         self.states: dict[str, TargetState] = {}
         for target in config.targets:
             self.states[target.name] = TargetState(name=target.name, url=target.url)
@@ -198,6 +284,8 @@ class SentinelEngine:
             self.states[tcp.name] = TargetState(name=tcp.name, url=f"tcp://{tcp.host}:{tcp.port}")
         for dns in config.dns_targets:
             self.states[dns.name] = TargetState(name=dns.name, url=f"dns://{dns.host} ({dns.record_type})")
+        for ping in config.ping_targets:
+            self.states[ping.name] = TargetState(name=ping.name, url=f"ping://{ping.host}")
 
         self.running = False
         self._stop_event = asyncio.Event()
@@ -211,6 +299,9 @@ class SentinelEngine:
                 config.metrics.host,
                 config.metrics.port,
                 lambda: self.states,
+                status_page_config=config.status_page,
+                incident_store=self.incident_store,
+                maintenance_manager=self.maintenance_manager,
             )
 
     def get_state(self, name: str) -> TargetState | None:
@@ -233,6 +324,10 @@ class SentinelEngine:
             dashboard=self.dashboard,
             is_tcp=False,
             display_endpoint=target.url,
+            notify_channels=target.notify,
+            severity=target.severity,
+            incident_store=self.incident_store,
+            maintenance_manager=self.maintenance_manager,
         )
         await worker.run()
 
@@ -252,6 +347,10 @@ class SentinelEngine:
             dashboard=self.dashboard,
             is_tcp=True,
             display_endpoint=f"{target.host}:{target.port}",
+            notify_channels=target.notify,
+            severity=target.severity,
+            incident_store=self.incident_store,
+            maintenance_manager=self.maintenance_manager,
         )
         await worker.run()
 
@@ -271,6 +370,33 @@ class SentinelEngine:
             dashboard=self.dashboard,
             is_dns=True,
             display_endpoint=f"{target.host} ({target.record_type})",
+            notify_channels=target.notify,
+            severity=target.severity,
+            incident_store=self.incident_store,
+            maintenance_manager=self.maintenance_manager,
+        )
+        await worker.run()
+
+    async def _run_ping_target_loop(self, target: PingTargetConfig) -> None:
+        """Run worker loop for an ICMP ping target (delegates to polymorphic TargetWorker)."""
+        state = self.states[target.name]
+        probe = PingProbe(target)
+        worker = TargetWorker(
+            name=target.name,
+            probe=probe,
+            state=state,
+            interval=target.interval or 60.0,
+            debounce_threshold=self.config.global_config.consecutive_failures_to_alert,
+            notifier=self.notifier,
+            stop_event=self._stop_event,
+            heartbeat=self.heartbeat,
+            dashboard=self.dashboard,
+            is_ping=True,
+            display_endpoint=f"ping://{target.host}",
+            notify_channels=target.notify,
+            severity=target.severity,
+            incident_store=self.incident_store,
+            maintenance_manager=self.maintenance_manager,
         )
         await worker.run()
 
@@ -312,14 +438,17 @@ class SentinelEngine:
             new_config.discord,
             new_config.slack,
         )
+        self.maintenance_manager = MaintenanceManager(new_config.maintenance)
 
         current_http_names = {t.name: t for t in new_config.targets}
         current_tcp_names = {t.name: t for t in new_config.tcp_targets}
         current_dns_names = {d.name: d for d in new_config.dns_targets}
+        current_ping_names = {p.name: p for p in new_config.ping_targets}
         all_new_names = (
             set(current_http_names.keys())
             | set(current_tcp_names.keys())
             | set(current_dns_names.keys())
+            | set(current_ping_names.keys())
         )
 
         # Remove targets that no longer exist
@@ -367,6 +496,18 @@ class SentinelEngine:
                 self._worker_tasks[name] = t
                 logger.info("Added new DNS target: %s", name)
 
+        # Add or update Ping targets
+        for name, ping in current_ping_names.items():
+            if name not in self.states:
+                self.states[name] = TargetState(name=name, url=f"ping://{ping.host}")
+            if self.running and name not in self._worker_tasks:
+                t = asyncio.create_task(
+                    self._run_ping_target_loop(ping),
+                    name=f"sentinel-ping-{name}",
+                )
+                self._worker_tasks[name] = t
+                logger.info("Added new Ping target: %s", name)
+
     async def run(self) -> None:
         """Start the async engine and monitor all configured targets concurrently."""
         self.running = True
@@ -381,11 +522,13 @@ class SentinelEngine:
                 len(self.config.targets)
                 + len(self.config.tcp_targets)
                 + len(self.config.dns_targets)
+                + len(self.config.ping_targets)
             )
             console.print(
                 f"[bold cyan]Sentinel started[/bold cyan] "
                 f"monitoring [yellow]{total_count}[/yellow] targets "
-                f"({len(self.config.targets)} HTTP, {len(self.config.tcp_targets)} TCP, {len(self.config.dns_targets)} DNS)"
+                f"({len(self.config.targets)} HTTP, {len(self.config.tcp_targets)} TCP, "
+                f"{len(self.config.dns_targets)} DNS, {len(self.config.ping_targets)} PING)"
             )
 
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
@@ -413,6 +556,13 @@ class SentinelEngine:
                 )
                 self._worker_tasks[dns.name] = task
 
+            for ping in self.config.ping_targets:
+                task = asyncio.create_task(
+                    self._run_ping_target_loop(ping),
+                    name=f"sentinel-ping-{ping.name}",
+                )
+                self._worker_tasks[ping.name] = task
+
             summary_task = asyncio.create_task(
                 self._run_daily_summary_loop(),
                 name="sentinel-daily-summary",
@@ -428,6 +578,7 @@ class SentinelEngine:
                 self.running = False
                 if self.metrics_server:
                     await self.metrics_server.stop()
+                self.incident_store.close()
                 if not self.dashboard:
                     console.print("[dim]Sentinel engine stopped.[/dim]")
 
@@ -436,3 +587,4 @@ class SentinelEngine:
         self._stop_event.set()
         for task in self._worker_tasks.values():
             task.cancel()
+        self.incident_store.close()

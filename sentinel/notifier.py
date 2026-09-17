@@ -91,6 +91,7 @@ class BaseNotifier(ABC):
         state: TargetState,
         debounce_threshold: int,
         timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         """Deliver service outage notification."""
 
@@ -99,6 +100,7 @@ class BaseNotifier(ABC):
         self,
         state: TargetState,
         timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         """Deliver service recovery notification."""
 
@@ -159,6 +161,7 @@ class TelegramNotifier(BaseNotifier):
         state: TargetState,
         debounce_threshold: int,
         timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         """Send an outage alert when a target fails health checks."""
         ts = timestamp or datetime.now(UTC)
@@ -174,9 +177,12 @@ class TelegramNotifier(BaseNotifier):
         name_escaped = html.escape(state.name)
         url_escaped = html.escape(state.url)
         status_escaped = html.escape(status_text)
+        sev_upper = (severity or "critical").upper()
+        icon = "🚨" if sev_upper == "CRITICAL" else ("⚠️" if sev_upper == "WARNING" else "ℹ️")
+        sev_badge = f"[{sev_upper}] " if sev_upper != "CRITICAL" else ""
 
         message = (
-            f"🚨 <b>SERVICE DOWN: {name_escaped}</b>\n"
+            f"{icon} <b>{sev_badge}SERVICE DOWN: {name_escaped}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>URL:</b> <code>{url_escaped}</code>\n"
             f"<b>Reason:</b> ❌ {reason_escaped}\n"
@@ -192,6 +198,7 @@ class TelegramNotifier(BaseNotifier):
         self,
         state: TargetState,
         timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         """Send a recovery alert when a failing target returns to healthy status."""
         ts = timestamp or datetime.now(UTC)
@@ -300,10 +307,12 @@ class WebhookNotifier(BaseNotifier):
         state: TargetState,
         debounce_threshold: int,
         timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         ts = timestamp or datetime.now(UTC)
         payload = {
             "event": "outage",
+            "severity": severity,
             "target": state.name,
             "url": state.url,
             "status_code": state.last_status_code,
@@ -319,10 +328,12 @@ class WebhookNotifier(BaseNotifier):
         self,
         state: TargetState,
         timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         ts = timestamp or datetime.now(UTC)
         payload = {
             "event": "recovery",
+            "severity": severity,
             "target": state.name,
             "url": state.url,
             "status_code": state.last_status_code,
@@ -390,19 +401,27 @@ class DiscordNotifier(BaseNotifier):
         )
 
     async def send_outage_alert(
-        self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
+        self,
+        state: TargetState,
+        debounce_threshold: int,
+        timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
         ts = timestamp or datetime.now(UTC)
+        sev_upper = (severity or "critical").upper()
+        icon = "🚨" if sev_upper == "CRITICAL" else ("⚠️" if sev_upper == "WARNING" else "ℹ️")
+        color = 15158332 if sev_upper == "CRITICAL" else (16103435 if sev_upper == "WARNING" else 3447003)
         payload = {
             "username": getattr(self.config, "username", "Sentinel"),
             "avatar_url": getattr(self.config, "avatar_url", None) or None,
             "embeds": [
                 {
-                    "title": f"🚨 SERVICE DOWN: {state.name}",
+                    "title": f"{icon} [{sev_upper}] SERVICE DOWN: {state.name}",
                     "description": f"Health check failed for `{state.name}`.",
-                    "color": 15158332,
+                    "color": color,
                     "fields": [
                         {"name": "URL", "value": f"`{state.url}`", "inline": False},
+                        {"name": "Severity", "value": sev_upper, "inline": True},
                         {"name": "Reason", "value": state.last_error_reason or "Failed", "inline": False},
                         {"name": "HTTP Status", "value": str(state.last_status_code or "N/A"), "inline": True},
                         {"name": "Latency", "value": f"{int(state.last_latency_ms)} ms", "inline": True},
@@ -414,7 +433,12 @@ class DiscordNotifier(BaseNotifier):
         }
         return await self.send_message(payload)
 
-    async def send_recovery_alert(self, state: TargetState, timestamp: datetime | None = None) -> bool:
+    async def send_recovery_alert(
+        self,
+        state: TargetState,
+        timestamp: datetime | None = None,
+        severity: str = "critical",
+    ) -> bool:
         ts = timestamp or datetime.now(UTC)
         duration_str = format_duration(state.previous_downtime_seconds)
         payload = {
@@ -500,19 +524,27 @@ class SlackNotifier(BaseNotifier):
         )
 
     async def send_outage_alert(
-        self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
+        self,
+        state: TargetState,
+        debounce_threshold: int,
+        timestamp: datetime | None = None,
+        severity: str = "critical",
     ) -> bool:
+        sev_upper = (severity or "critical").upper()
+        icon = "🚨" if sev_upper == "CRITICAL" else ("⚠️" if sev_upper == "WARNING" else "ℹ️")
+        header_text = f"{icon} [{sev_upper}] SERVICE DOWN: {state.name}"
         payload = {
-            "text": f"🚨 SERVICE DOWN: {state.name}",
+            "text": header_text,
             "blocks": [
                 {
                     "type": "header",
-                    "text": {"type": "plain_text", "text": f"🚨 SERVICE DOWN: {state.name}"},
+                    "text": {"type": "plain_text", "text": header_text},
                 },
                 {
                     "type": "section",
                     "fields": [
                         {"type": "mrkdwn", "text": f"*URL:*\n`{state.url}`"},
+                        {"type": "mrkdwn", "text": f"*Severity:*\n{sev_upper}"},
                         {"type": "mrkdwn", "text": f"*HTTP Status:*\n{state.last_status_code or 'N/A'}"},
                         {"type": "mrkdwn", "text": f"*Reason:*\n{state.last_error_reason or 'Failure'}"},
                         {"type": "mrkdwn", "text": f"*Failures:*\n{state.consecutive_failures} / {debounce_threshold}"},
@@ -522,7 +554,12 @@ class SlackNotifier(BaseNotifier):
         }
         return await self.send_message(payload)
 
-    async def send_recovery_alert(self, state: TargetState, timestamp: datetime | None = None) -> bool:
+    async def send_recovery_alert(
+        self,
+        state: TargetState,
+        timestamp: datetime | None = None,
+        severity: str = "critical",
+    ) -> bool:
         duration_str = format_duration(state.previous_downtime_seconds)
         payload = {
             "text": f"✅ SERVICE RECOVERED: {state.name}",
@@ -614,20 +651,58 @@ class AlertDispatcher(BaseNotifier):
         """Return True if at least one alerting channel is configured."""
         return any(channel.is_configured for channel in self._channels)
 
+    def _resolve_channels(self, channels: list[str] | None = None) -> list[BaseNotifier]:
+        """Filter active channels by name or return all configured channels."""
+        if not channels:
+            return [channel for channel in self._channels if channel.is_configured]
+
+        wanted = {c.lower().strip() for c in channels}
+        matched: list[BaseNotifier] = []
+
+        channel_map: dict[str, BaseNotifier] = {
+            "telegram": self.telegram,
+            "webhook": self.webhook,
+            "discord": self.discord,
+            "slack": self.slack,
+        }
+
+        for name, ch in channel_map.items():
+            if name in wanted and ch.is_configured and ch not in matched:
+                matched.append(ch)
+
+        for ch in self._channels:
+            ch_name = (
+                getattr(ch, "channel_id", None)
+                or getattr(ch, "channel_name", None)
+                or getattr(ch, "name", None)
+                or ch.__class__.__name__
+            )
+            ch_str = str(ch_name).lower().replace("notifier", "").strip()
+            if (ch_str in wanted or str(ch_name).lower() in wanted) and ch.is_configured and ch not in matched:
+                matched.append(ch)
+
+        return matched if matched else [channel for channel in self._channels if channel.is_configured]
+
     async def send_outage_alert(
         self,
         state: TargetState,
         debounce_threshold: int,
         timestamp: datetime | None = None,
+        channels: list[str] | None = None,
+        severity: str = "critical",
     ) -> bool:
-        """Dispatch outage alerts in parallel to all active notification channels."""
+        """Dispatch outage alerts to matching or all active notification channels."""
         ts = timestamp or datetime.now(UTC)
+        active_channels = self._resolve_channels(channels)
+
+        async def _dispatch_outage(channel: BaseNotifier) -> bool:
+            try:
+                return await channel.send_outage_alert(state, debounce_threshold, ts, severity=severity)
+            except TypeError:
+                return await channel.send_outage_alert(state, debounce_threshold, ts)
+
         results = await asyncio.gather(
-            *(
-                channel.send_outage_alert(state, debounce_threshold, ts)
-                for channel in self._channels
-                if channel.is_configured
-            ),
+            *(_dispatch_outage(channel) for channel in active_channels),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -636,15 +711,21 @@ class AlertDispatcher(BaseNotifier):
         self,
         state: TargetState,
         timestamp: datetime | None = None,
+        channels: list[str] | None = None,
+        severity: str = "critical",
     ) -> bool:
-        """Dispatch recovery alerts in parallel to all active notification channels."""
+        """Dispatch recovery alerts to matching or all active notification channels."""
         ts = timestamp or datetime.now(UTC)
+        active_channels = self._resolve_channels(channels)
+
+        async def _dispatch_recovery(channel: BaseNotifier) -> bool:
+            try:
+                return await channel.send_recovery_alert(state, ts, severity=severity)
+            except TypeError:
+                return await channel.send_recovery_alert(state, ts)
+
         results = await asyncio.gather(
-            *(
-                channel.send_recovery_alert(state, ts)
-                for channel in self._channels
-                if channel.is_configured
-            ),
+            *(_dispatch_recovery(channel) for channel in active_channels),
             return_exceptions=True,
         )
         return any(r is True for r in results)

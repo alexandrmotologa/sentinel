@@ -19,8 +19,10 @@ from sentinel import __version__
 from sentinel.config import SentinelConfig
 from sentinel.dashboard import SentinelDashboard
 from sentinel.engine import SentinelEngine, is_daemon_healthy
-from sentinel.evaluator import CheckResult, DnsProbe, HttpProbe, TcpProbe, create_async_client
+from sentinel.evaluator import CheckResult, DnsProbe, HttpProbe, PingProbe, TcpProbe, create_async_client
+from sentinel.maintenance import MaintenanceManager
 from sentinel.notifier import AlertDispatcher
+from sentinel.storage import IncidentStore
 
 logger = logging.getLogger("sentinel.cli")
 console = Console()
@@ -114,6 +116,21 @@ class ConfigReportPresenter:
                 rule_summary,
             )
 
+        for ping in cfg.ping_targets:
+            rules = [f"count={ping.count}", f"timeout={ping.timeout:.1f}s"]
+            if ping.expect.max_latency_ms is not None:
+                rules.append(f"latency<={int(ping.expect.max_latency_ms)}ms")
+            if ping.expect.max_packet_loss_percent is not None:
+                rules.append(f"loss<={int(ping.expect.max_packet_loss_percent)}%")
+            rule_summary = ", ".join(rules)
+            table.add_row(
+                "PING",
+                ping.name,
+                ping.host,
+                f"{ping.interval:.0f}s",
+                rule_summary,
+            )
+
         console.print(table)
 
 
@@ -131,14 +148,17 @@ class ProbeRunner:
                 (dns.name, f"{dns.host} ({dns.record_type})", DnsProbe(dns))
                 for dns in cfg.dns_targets
             ]
+            ping_probes = [(ping.name, ping.host, PingProbe(ping)) for ping in cfg.ping_targets]
 
             http_tasks = [probe.check() for _, _, probe in http_probes]
             tcp_tasks = [probe.check() for _, _, probe in tcp_probes]
             dns_tasks = [probe.check() for _, _, probe in dns_probes]
+            ping_tasks = [probe.check() for _, _, probe in ping_probes]
 
             http_res = await asyncio.gather(*http_tasks) if http_tasks else []
             tcp_res = await asyncio.gather(*tcp_tasks) if tcp_tasks else []
             dns_res = await asyncio.gather(*dns_tasks) if dns_tasks else []
+            ping_res = await asyncio.gather(*ping_tasks) if ping_tasks else []
 
             for (name, url, _), res in zip(http_probes, http_res):
                 results.append(("HTTP", name, url, res))
@@ -146,6 +166,8 @@ class ProbeRunner:
                 results.append(("TCP", name, endpoint, res))
             for (name, endpoint, _), res in zip(dns_probes, dns_res):
                 results.append(("DNS", name, endpoint, res))
+            for (name, endpoint, _), res in zip(ping_probes, ping_res):
+                results.append(("PING", name, endpoint, res))
 
         return results
 
@@ -257,7 +279,7 @@ def probe(
         console.print(f"[bold red]Configuration error:[/bold red] {exc}")
         raise typer.Exit(code=1)
 
-    if not cfg.targets and not cfg.tcp_targets and not cfg.dns_targets:
+    if not cfg.targets and not cfg.tcp_targets and not cfg.dns_targets and not cfg.ping_targets:
         console.print("[bold yellow]No targets defined in configuration.[/bold yellow]")
         raise typer.Exit(code=1)
 
@@ -338,7 +360,7 @@ def run(
         console.print(f"[bold red]Failed loading configuration:[/bold red] {exc}")
         raise typer.Exit(code=1)
 
-    if not cfg.targets and not cfg.tcp_targets and not cfg.dns_targets:
+    if not cfg.targets and not cfg.tcp_targets and not cfg.dns_targets and not cfg.ping_targets:
         console.print("[bold yellow]No targets defined in configuration.[/bold yellow]")
         raise typer.Exit(code=1)
 
@@ -401,6 +423,104 @@ def healthcheck(
     else:
         console.print("[red]ERROR: Daemon heartbeat is stale or missing.[/red]")
         sys.exit(1)
+
+
+@app.command(name="mute")
+def mute(
+    target_name: str = typer.Argument(..., help="Name of the target to mute"),
+    duration_minutes: int = typer.Option(60, "--duration", "-d", help="Duration of mute in minutes"),
+    reason: str = typer.Option("Manual maintenance", "--reason", "-r", help="Reason for mute"),
+    mutes_file: Path = typer.Option(Path("sentinel_mutes.json"), "--mutes-file", help="Path to mutes JSON file"),
+) -> None:
+    """Temporarily mute alert notifications for a target."""
+    mgr = MaintenanceManager(mutes_file=mutes_file)
+    mgr.mute(target_name, duration_minutes=duration_minutes, reason=reason)
+    console.print(
+        f"[bold green]Target '{target_name}' muted for {duration_minutes}m.[/bold green] Reason: {reason}"
+    )
+
+
+@app.command(name="unmute")
+def unmute(
+    target_name: str = typer.Argument(..., help="Name of the target to unmute"),
+    mutes_file: Path = typer.Option(Path("sentinel_mutes.json"), "--mutes-file", help="Path to mutes JSON file"),
+) -> None:
+    """Remove an active maintenance mute for a target."""
+    mgr = MaintenanceManager(mutes_file=mutes_file)
+    if mgr.unmute(target_name):
+        console.print(f"[bold green]Target '{target_name}' unmuted.[/bold green]")
+    else:
+        console.print(f"[bold yellow]Target '{target_name}' was not actively muted.[/bold yellow]")
+
+
+@app.command(name="mutes")
+def list_mutes(
+    mutes_file: Path = typer.Option(Path("sentinel_mutes.json"), "--mutes-file", help="Path to mutes JSON file"),
+) -> None:
+    """List all currently active maintenance mutes."""
+    mgr = MaintenanceManager(mutes_file=mutes_file)
+    active = mgr.get_active_mutes()
+    if not active:
+        console.print("[dim]No active maintenance mutes.[/dim]")
+        return
+
+    table = Table(title="Active Maintenance Mutes", show_header=True, header_style="bold magenta")
+    table.add_column("Target Name", style="cyan")
+    table.add_column("Expires At", style="yellow")
+    table.add_column("Reason", style="bright_white")
+
+    for item in active:
+        table.add_row(item.target_name, item.expires_at.strftime("%Y-%m-%d %H:%M:%S UTC"), item.reason)
+    console.print(table)
+
+
+@app.command(name="incidents")
+def incidents(
+    days: int = typer.Option(7, "--days", "-d", help="Number of past days to query"),
+    limit: int = typer.Option(20, "--limit", "-l", help="Max incidents to display"),
+    db_path: Path = typer.Option(Path("sentinel.db"), "--db", help="Path to SQLite database file"),
+) -> None:
+    """Show past outage incidents recorded in Sentinel's database."""
+    if not db_path.exists():
+        console.print(f"[bold yellow]No incident database found at: {db_path}[/bold yellow]")
+        return
+
+    store = IncidentStore(db_path)
+    recent = store.get_recent_incidents(days=days, limit=limit)
+    store.close()
+
+    if not recent:
+        console.print(f"[green]No outage incidents recorded in the last {days} days.[/green]")
+        return
+
+    table = Table(title=f"Incidents (Last {days} Days)", show_header=True, header_style="bold magenta")
+    table.add_column("ID", style="dim", justify="right")
+    table.add_column("Target", style="cyan")
+    table.add_column("Started At", style="yellow")
+    table.add_column("Resolved At", style="green")
+    table.add_column("Duration", justify="right")
+    table.add_column("Root Cause", style="red")
+
+    for inc in recent:
+        start_str = inc.started_at.strftime("%Y-%m-%d %H:%M:%S")
+        resolved_str = (
+            inc.resolved_at.strftime("%Y-%m-%d %H:%M:%S") if inc.resolved_at else "[bold red]ONGOING[/bold red]"
+        )
+        if inc.duration_seconds is not None:
+            mins = int(inc.duration_seconds // 60)
+            secs = int(inc.duration_seconds % 60)
+            dur_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+        else:
+            dur_str = "-"
+        table.add_row(
+            str(inc.id),
+            inc.target_name,
+            start_str,
+            resolved_str,
+            dur_str,
+            inc.error_reason or "Unreachable",
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":

@@ -4,11 +4,30 @@ global:
   default_timeout: 10s             # Default request timeout
   consecutive_failures_to_alert: 2 # Debounce: alert triggered after 2 consecutive failures
   daily_summary_time: "09:00"      # Optional daily summary notification time in UTC
+  db_path: "sentinel.db"           # SQLite database for persistent incident history & SLA
 
 metrics:
   enabled: true                    # Embedded async metrics server
   host: "0.0.0.0"                  # Listen address
-  port: 9090                       # Serves /metrics (Prometheus) and /healthz (JSON)
+  port: 9090                       # Serves /metrics (Prometheus), /healthz (JSON), and /status (Web UI)
+
+status_page:
+  title: "Acme Infrastructure Status"
+  company_name: "Acme Corporation"
+  logo_url: ""                     # URL or data URI for custom SVG/PNG logo
+  announcement: ""                 # Optional system-wide announcement banner
+  announcement_type: "info"        # Visual type: 'info', 'warning', or 'outage'
+
+maintenance:
+  - name: "database-backup"
+    targets: ["Primary PostgreSQL"]
+    schedule: "daily 02:00-03:00 UTC"
+    reason: "Nightly automated snapshot and vacuum"
+
+  - name: "weekly-reboot"
+    targets: ["*"]
+    schedule: "weekly sun 01:00-02:00 UTC"
+    reason: "Scheduled cluster maintenance"
 
 telegram:
   bot_token: "env:TELEGRAM_BOT_TOKEN" # Resolves environment variable
@@ -38,6 +57,8 @@ targets:
     interval: 30s
     timeout: 5s
     method: "GET"
+    notify: ["telegram", "slack"]        # Per-target alert channel routing
+    severity: "critical"                 # Alert severity tier ('critical', 'warning', 'info')
     headers:
       Authorization: "Bearer env:API_SECRET"
     expect:
@@ -50,6 +71,8 @@ targets:
   - name: "Landing Page"
     url: "https://example.com"
     interval: 60s
+    notify: ["telegram"]
+    severity: "warning"
     expect:
       status_code: 200
       contains_text: "Example Domain"
@@ -72,6 +95,8 @@ tcp_targets:
     port: 5432
     interval: 30s
     timeout: 3s
+    notify: ["slack"]
+    severity: "critical"
 
   - name: "Redis Cache Cluster"
     host: "127.0.0.1"
@@ -99,3 +124,23 @@ dns_targets:
       expected_ips:
         - "8.8.8.8"
 
+ping_targets:
+  - name: "Edge Gateway Router"
+    host: "1.1.1.1"
+    count: 3
+    interval: 30s
+    timeout: 2s
+    expect:
+      max_latency_ms: 50
+      max_packet_loss_percent: 0
+    notify: ["telegram"]
+    severity: "warning"
+
+  - name: "Google Public Anycast"
+    host: "8.8.8.8"
+    count: 4
+    interval: 60s
+    timeout: 3s
+    expect:
+      max_latency_ms: 100
+      max_packet_loss_percent: 0
