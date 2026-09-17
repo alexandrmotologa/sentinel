@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import json
 import logging
-from pathlib import Path
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -19,9 +19,8 @@ from sentinel import __version__
 from sentinel.config import SentinelConfig
 from sentinel.dashboard import SentinelDashboard
 from sentinel.engine import SentinelEngine, is_daemon_healthy
-from sentinel.evaluator import CheckResult, HttpProbe, TcpProbe, create_async_client
+from sentinel.evaluator import CheckResult, DnsProbe, HttpProbe, TcpProbe, create_async_client
 from sentinel.notifier import AlertDispatcher
-
 
 logger = logging.getLogger("sentinel.cli")
 console = Console()
@@ -98,6 +97,23 @@ class ConfigReportPresenter:
                 f"timeout={tcp.timeout:.1f}s",
             )
 
+        for dns in cfg.dns_targets:
+            rules = []
+            if dns.expect.expected_ips:
+                rules.append(f"ips={dns.expect.expected_ips}")
+            if dns.expect.expected_cname:
+                rules.append(f"cname={dns.expect.expected_cname}")
+            if dns.expect.max_latency_ms is not None:
+                rules.append(f"latency<={int(dns.expect.max_latency_ms)}ms")
+            rule_summary = ", ".join(rules) if rules else "default (resolves)"
+            table.add_row(
+                "DNS",
+                dns.name,
+                f"{dns.host} ({dns.record_type})",
+                f"{dns.interval:.0f}s",
+                rule_summary,
+            )
+
         console.print(table)
 
 
@@ -111,17 +127,25 @@ class ProbeRunner:
         async with create_async_client() as client:
             http_probes = [(t.name, t.url, HttpProbe(t, client)) for t in cfg.targets]
             tcp_probes = [(tcp.name, f"{tcp.host}:{tcp.port}", TcpProbe(tcp)) for tcp in cfg.tcp_targets]
+            dns_probes = [
+                (dns.name, f"{dns.host} ({dns.record_type})", DnsProbe(dns))
+                for dns in cfg.dns_targets
+            ]
 
             http_tasks = [probe.check() for _, _, probe in http_probes]
             tcp_tasks = [probe.check() for _, _, probe in tcp_probes]
+            dns_tasks = [probe.check() for _, _, probe in dns_probes]
 
             http_res = await asyncio.gather(*http_tasks) if http_tasks else []
             tcp_res = await asyncio.gather(*tcp_tasks) if tcp_tasks else []
+            dns_res = await asyncio.gather(*dns_tasks) if dns_tasks else []
 
             for (name, url, _), res in zip(http_probes, http_res):
                 results.append(("HTTP", name, url, res))
             for (name, endpoint, _), res in zip(tcp_probes, tcp_res):
                 results.append(("TCP", name, endpoint, res))
+            for (name, endpoint, _), res in zip(dns_probes, dns_res):
+                results.append(("DNS", name, endpoint, res))
 
         return results
 
@@ -233,7 +257,7 @@ def probe(
         console.print(f"[bold red]Configuration error:[/bold red] {exc}")
         raise typer.Exit(code=1)
 
-    if not cfg.targets and not cfg.tcp_targets:
+    if not cfg.targets and not cfg.tcp_targets and not cfg.dns_targets:
         console.print("[bold yellow]No targets defined in configuration.[/bold yellow]")
         raise typer.Exit(code=1)
 
@@ -242,7 +266,7 @@ def probe(
 
     if as_json:
         payload: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "all_passed": all_passed,
             "targets": [
                 {
@@ -314,7 +338,7 @@ def run(
         console.print(f"[bold red]Failed loading configuration:[/bold red] {exc}")
         raise typer.Exit(code=1)
 
-    if not cfg.targets and not cfg.tcp_targets:
+    if not cfg.targets and not cfg.tcp_targets and not cfg.dns_targets:
         console.print("[bold yellow]No targets defined in configuration.[/bold yellow]")
         raise typer.Exit(code=1)
 

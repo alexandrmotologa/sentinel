@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sentinel.evaluator import CheckResult
 
 
-class TargetStatus(str, Enum):
+class TargetStatus(StrEnum):
     """Operational health status of a monitored target."""
 
     UNKNOWN = "UNKNOWN"
@@ -60,6 +60,7 @@ class TargetState:
     min_latency_ms: float = 0.0
     max_latency_ms: float = 0.0
     total_latency_ms: float = 0.0
+    last_resolved_ips: list[str] = field(default_factory=list)
 
     @property
     def uptime_percentage(self) -> float:
@@ -79,7 +80,7 @@ class TargetState:
         """Calculate elapsed downtime in seconds if currently down."""
         if self.down_since is None:
             return 0.0
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         return max(0.0, (current - self.down_since).total_seconds())
 
     def record_latency(self, latency_ms: float) -> None:
@@ -88,8 +89,7 @@ class TargetState:
         self.total_latency_ms += latency_ms
         if self.total_checks == 1 or latency_ms < self.min_latency_ms:
             self.min_latency_ms = latency_ms
-        if latency_ms > self.max_latency_ms:
-            self.max_latency_ms = latency_ms
+        self.max_latency_ms = max(self.max_latency_ms, latency_ms)
 
     def update(
         self,
@@ -112,6 +112,8 @@ class TargetState:
 
         self.last_status_code = result.status_code
         self.last_status_phrase = result.status_phrase
+        if hasattr(result, "resolved_ips"):
+            self.last_resolved_ips = list(result.resolved_ips)
 
         should_send_outage = False
         should_send_recovery = False

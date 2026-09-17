@@ -78,3 +78,24 @@ tcp_targets:
     port: 6379
     interval: 15s
     timeout: 2s
+
+dns_targets:
+  - name: "Cloudflare DNS Resolution"
+    host: "one.one.one.one"
+    record_type: "A"
+    interval: 60s
+    timeout: 5s
+    expect:
+      expected_ips:
+        - "1.1.1.1"
+      max_latency_ms: 500
+
+  - name: "Public Gateway Resolver"
+    host: "dns.google"
+    record_type: "A"
+    interval: 60s
+    timeout: 5s
+    expect:
+      expected_ips:
+        - "8.8.8.8"
+

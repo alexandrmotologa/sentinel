@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import re
 import socket
 import ssl
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
-from sentinel.config import ExpectConfig, TargetConfig, TCPTargetConfig
+from sentinel.config import DNSTargetConfig, ExpectConfig, TargetConfig, TCPTargetConfig
 
 
 @dataclass
@@ -28,7 +28,8 @@ class CheckResult:
     latency_ms: float = 0.0
     error_reason: str | None = None
     ssl_days_left: int | None = None
-    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    resolved_ips: list[str] = field(default_factory=list)
+    checked_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def http_status_text(self) -> str:
@@ -156,9 +157,9 @@ async def get_ssl_days_left(url: str, timeout: float = 5.0) -> int:
                     return 0
                 # Format: 'May 26 23:59:59 2026 GMT'
                 expire_date = datetime.strptime(not_after_val, "%b %d %H:%M:%S %Y %Z").replace(
-                    tzinfo=timezone.utc
+                    tzinfo=UTC
                 )
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 delta = expire_date - now
                 return max(0, delta.days)
 
@@ -393,7 +394,7 @@ class HttpProbe(BaseProbe):
                 status_phrase="Timeout",
                 latency_ms=latency_ms,
                 error_reason=f"Connection timed out after {timeout:.1f}s",
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
         except httpx.ConnectError as exc:
             latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -403,7 +404,7 @@ class HttpProbe(BaseProbe):
                 status_phrase="Connection Failed",
                 latency_ms=latency_ms,
                 error_reason=f"Failed to connect to host: {exc}",
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -413,7 +414,7 @@ class HttpProbe(BaseProbe):
                 status_phrase="Request Error",
                 latency_ms=latency_ms,
                 error_reason=str(exc),
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
 
         status_code = response.status_code
@@ -434,7 +435,7 @@ class HttpProbe(BaseProbe):
             latency_ms=latency_ms,
             error_reason=reason,
             ssl_days_left=ssl_days,
-            checked_at=datetime.now(timezone.utc),
+            checked_at=datetime.now(UTC),
         )
 
 
@@ -466,9 +467,9 @@ class TcpProbe(BaseProbe):
                 status_code=None,
                 status_phrase="Connected",
                 latency_ms=latency_ms,
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             latency_ms = (time.perf_counter() - start_time) * 1000.0
             return CheckResult(
                 passed=False,
@@ -476,7 +477,7 @@ class TcpProbe(BaseProbe):
                 status_phrase="Timeout",
                 latency_ms=latency_ms,
                 error_reason=f"TCP connection timed out after {timeout:.1f}s",
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
         except ConnectionRefusedError:
             latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -486,7 +487,7 @@ class TcpProbe(BaseProbe):
                 status_phrase="Connection Refused",
                 latency_ms=latency_ms,
                 error_reason=f"Connection refused on {self.target.host}:{self.target.port}",
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -496,13 +497,16 @@ class TcpProbe(BaseProbe):
                 status_phrase="Connection Failed",
                 latency_ms=latency_ms,
                 error_reason=str(exc),
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
             )
 
 
 # ---------------------------------------------------------------------------
 # Public Facade Functions (Preserving 100% Backward Compatibility)
 # ---------------------------------------------------------------------------
+
+from sentinel.dns_probe import DnsProbe  # noqa: E402
+
 
 async def evaluate_target(target: TargetConfig, client: httpx.AsyncClient) -> CheckResult:
     """Execute target request and evaluate health expectations via HttpProbe."""
@@ -512,3 +516,8 @@ async def evaluate_target(target: TargetConfig, client: httpx.AsyncClient) -> Ch
 async def evaluate_tcp_target(target: TCPTargetConfig) -> CheckResult:
     """Evaluate socket connectivity to a TCP host and port via TcpProbe."""
     return await TcpProbe(target).check()
+
+
+async def evaluate_dns_target(target: DNSTargetConfig) -> CheckResult:
+    """Evaluate DNS name resolution and assertion rules via DnsProbe."""
+    return await DnsProbe(target).check()

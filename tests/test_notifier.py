@@ -1,9 +1,10 @@
 """Unit tests for Telegram notification formatting and delivery."""
 
 import json
-import pytest
+from datetime import UTC, datetime
+
 import httpx
-from datetime import datetime, timezone
+import pytest
 
 from sentinel.config import TelegramConfig
 from sentinel.notifier import TelegramNotifier
@@ -42,7 +43,7 @@ async def test_outage_alert_formatting():
         consecutive_failures=2,
     )
 
-    test_time = datetime(2026, 9, 9, 0, 35, 12, tzinfo=timezone.utc)
+    test_time = datetime(2026, 9, 9, 0, 35, 12, tzinfo=UTC)
 
     # Monkeypatch httpx.AsyncClient instantiation inside send_message
     orig_async_client = httpx.AsyncClient
@@ -90,7 +91,7 @@ async def test_recovery_alert_formatting():
         previous_downtime_seconds=255.0,  # 4 minutes, 15 seconds
     )
 
-    test_time = datetime(2026, 9, 9, 0, 39, 27, tzinfo=timezone.utc)
+    test_time = datetime(2026, 9, 9, 0, 39, 27, tzinfo=UTC)
 
     orig_async_client = httpx.AsyncClient
     try:

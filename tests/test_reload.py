@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sentinel.config import GlobalConfig, SentinelConfig, TargetConfig, TCPTargetConfig
 from sentinel.engine import SentinelEngine
-from sentinel.state import TargetStatus
 
 
 def test_reload_config_add_remove_targets():

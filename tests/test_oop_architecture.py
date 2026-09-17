@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-import pytest
-import httpx
 
-from sentinel.config import ExpectConfig, TargetConfig, TCPTargetConfig
+import httpx
+import pytest
+
+from sentinel.config import DNSTargetConfig, ExpectConfig, TargetConfig, TCPTargetConfig
 from sentinel.engine import HeartbeatService, TargetWorker
 from sentinel.evaluator import (
     BaseProbe,
     CheckResult,
+    DnsProbe,
     HttpAssertionPipeline,
     HttpProbe,
     JsonAssertion,
@@ -147,6 +149,10 @@ async def test_polymorphic_probe_hierarchy():
     tcp_target = TCPTargetConfig(name="test-tcp", host="127.0.0.1", port=9999)
     tcp_probe = TcpProbe(tcp_target)
     assert isinstance(tcp_probe, BaseProbe)
+
+    dns_target = DNSTargetConfig(name="test-dns", host="one.one.one.one", record_type="A")
+    dns_probe = DnsProbe(dns_target)
+    assert isinstance(dns_probe, BaseProbe)
 
 
 def test_heartbeat_service(tmp_path: Path):

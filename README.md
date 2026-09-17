@@ -26,6 +26,8 @@
 - Downtime tracking and recovery notifications with elapsed outage duration
 - HTTP assertion rules: status code ranges, max latency, regex, text, and nested JSON keys
 - Direct TCP socket connectivity checks for databases (PostgreSQL, MySQL) and caches (Redis)
+- Native DNS resolution & propagation probes (`DnsProbe`) for A, AAAA, CNAME, MX, and TXT records
+- Built-in zero-dependency dark-mode Web Status Page (`/` and `/status`) with live client polling
 - Embedded metrics server exposing Prometheus `/metrics` and JSON `/healthz` endpoints
 - Multi-channel alerting: Telegram, generic webhooks, native Discord embeds, and Slack Block Kit
 - Real-time terminal dashboard (`sentinel run --dashboard`) powered by Rich
@@ -36,7 +38,7 @@
 ## Visual Overview
 
 ### 1. Interactive Live Terminal Dashboard
-Monitor all HTTP and TCP targets in real-time with latency sparkline bars, SLA uptime percentages, and live alert event streaming.
+Monitor all HTTP, TCP, and DNS targets in real-time with latency sparkline bars, SLA uptime percentages, and live alert event streaming.
 
 ```bash
 sentinel run sites.yaml --dashboard
@@ -74,6 +76,14 @@ Built-in async HTTP service exposing Prometheus exposition metrics on port 9090 
 <p align="center">
   <img src="docs/screenshots/04_metrics.png" alt="Prometheus and Healthz Endpoints" width="860">
 </p>
+
+### 5. Built-in Web Status Page (`/` and `/status`)
+A zero-dependency, ultra-lightweight dark mode web dashboard served directly by the internal HTTP server on port 9090. Features live status pills, 24-hour uptime ratio bars, latency metrics, and auto-updating client-side polling.
+
+```bash
+# Available when metrics.enabled is true
+curl http://localhost:9090/status
+```
 
 ## Quick Start
 
@@ -132,9 +142,10 @@ sentinel run sites.yaml --watch
 
 - [Architecture Guide](docs/architecture.md): Concurrency model, state transitions, and debounce logic.
 - [Configuration Reference](docs/configuration.md): Full syntax and options for `sites.yaml`.
-- [Metrics and Health](docs/metrics.md): Prometheus `/metrics` exposition and JSON `/healthz` schema.
-- [Discord and Slack Alerts](docs/discord_slack.md): Webhook integration and message layouts.
+- [Metrics and Health](docs/metrics.md): Prometheus `/metrics` exposition, JSON `/healthz`, and Web Status Page.
+- [DNS Resolution Probes](docs/dns_checks.md): Record validation and latency monitoring for A, AAAA, CNAME, MX, and TXT.
 - [TCP Socket Checks](docs/tcp_checks.md): Port monitoring for databases and backend services.
+- [Discord and Slack Alerts](docs/discord_slack.md): Webhook integration and message layouts.
 - [Alerting Guide](docs/alerting.md): Telegram templates, sound rules, and notification triggers.
 - [Deployment Guide](docs/deployment.md): Running under Docker, systemd, or background processes.
 

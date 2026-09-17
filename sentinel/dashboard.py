@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from rich.layout import Layout

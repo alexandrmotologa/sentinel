@@ -1,12 +1,10 @@
 """Unit tests for health evaluation rules and HTTP assertions."""
 
-import json
-import pytest
 import httpx
+import pytest
 
 from sentinel.config import ExpectConfig, TargetConfig
 from sentinel.evaluator import (
-    CheckResult,
     _check_status_code,
     _match_json_structure,
     evaluate_target,

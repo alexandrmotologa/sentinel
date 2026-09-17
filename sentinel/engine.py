@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import logging
 import os
-from pathlib import Path
 import tempfile
 import time
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
 from rich.console import Console
 
-from sentinel.config import SentinelConfig, TargetConfig, TCPTargetConfig
-from sentinel.evaluator import BaseProbe, HttpProbe, TcpProbe, create_async_client
+from sentinel.config import DNSTargetConfig, SentinelConfig, TargetConfig, TCPTargetConfig
+from sentinel.evaluator import BaseProbe, DnsProbe, HttpProbe, TcpProbe, create_async_client
 from sentinel.notifier import AlertDispatcher
 from sentinel.server import MetricsServer
 from sentinel.state import TargetState
@@ -99,6 +99,7 @@ class TargetWorker:
         heartbeat: HeartbeatService = default_heartbeat,
         dashboard: SentinelDashboard | None = None,
         is_tcp: bool = False,
+        is_dns: bool = False,
         display_endpoint: str = "",
     ) -> None:
         self.name = name
@@ -111,12 +112,18 @@ class TargetWorker:
         self.heartbeat = heartbeat
         self.dashboard = dashboard
         self.is_tcp = is_tcp
+        self.is_dns = is_dns
         self.display_endpoint = display_endpoint
 
     def _log_console_check(self, result_passed: bool, latency_ms: float, error_reason: str | None, status_text: str) -> None:
         """Print colored check outcome to console when dashboard is not active."""
         ts_str = datetime.now().strftime("%H:%M:%S")
-        proto_tag = " [bold blue]TCP[/bold blue]" if self.is_tcp else ""
+        proto_tag = ""
+        if self.is_tcp:
+            proto_tag = " [bold blue]TCP[/bold blue]"
+        elif self.is_dns:
+            proto_tag = " [bold magenta]DNS[/bold magenta]"
+
         if result_passed:
             console.print(
                 f"[[dim]{ts_str}[/dim]] [green]PASS[/green]{proto_tag} {self.name} "
@@ -143,34 +150,32 @@ class TargetWorker:
                     result_passed=result.passed,
                     latency_ms=result.latency_ms,
                     error_reason=result.error_reason,
-                    status_text=result.http_status_text if not self.is_tcp else "",
+                    status_text=result.http_status_text if (not self.is_tcp and not self.is_dns) else "",
                 )
 
             if should_outage:
+                prefix = "TCP " if self.is_tcp else ("DNS " if self.is_dns else "")
                 if self.dashboard:
-                    prefix = "TCP " if self.is_tcp else ""
                     self.dashboard.record_event(
                         "outage", f"{prefix}{self.name} failed: {result.error_reason}"
                     )
                 else:
-                    prefix = "TCP " if self.is_tcp else ""
                     console.print(f"[bold red]>>> Outage alert dispatched for {prefix}{self.name}[/bold red]")
                 asyncio.create_task(
                     self.notifier.send_outage_alert(self.state, self.debounce_threshold)
                 )
 
             if should_recovery:
+                prefix = "TCP " if self.is_tcp else ("DNS " if self.is_dns else "")
                 if self.dashboard:
-                    prefix = "TCP " if self.is_tcp else ""
                     self.dashboard.record_event("recovery", f"{prefix}{self.name} recovered")
                 else:
-                    prefix = "TCP " if self.is_tcp else ""
                     console.print(f"[bold green]>>> Recovery alert dispatched for {prefix}{self.name}[/bold green]")
                 asyncio.create_task(self.notifier.send_recovery_alert(self.state))
 
             try:
                 await asyncio.wait_for(self.stop_event.wait(), timeout=self.interval)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
 
@@ -191,6 +196,8 @@ class SentinelEngine:
             self.states[target.name] = TargetState(name=target.name, url=target.url)
         for tcp in config.tcp_targets:
             self.states[tcp.name] = TargetState(name=tcp.name, url=f"tcp://{tcp.host}:{tcp.port}")
+        for dns in config.dns_targets:
+            self.states[dns.name] = TargetState(name=dns.name, url=f"dns://{dns.host} ({dns.record_type})")
 
         self.running = False
         self._stop_event = asyncio.Event()
@@ -248,6 +255,25 @@ class SentinelEngine:
         )
         await worker.run()
 
+    async def _run_dns_target_loop(self, target: DNSTargetConfig) -> None:
+        """Run worker loop for a DNS target (delegates to polymorphic TargetWorker)."""
+        state = self.states[target.name]
+        probe = DnsProbe(target)
+        worker = TargetWorker(
+            name=target.name,
+            probe=probe,
+            state=state,
+            interval=target.interval or 60.0,
+            debounce_threshold=target.flap_threshold or self.config.global_config.consecutive_failures_to_alert,
+            notifier=self.notifier,
+            stop_event=self._stop_event,
+            heartbeat=self.heartbeat,
+            dashboard=self.dashboard,
+            is_dns=True,
+            display_endpoint=f"{target.host} ({target.record_type})",
+        )
+        await worker.run()
+
     async def _run_daily_summary_loop(self) -> None:
         """Sends daily summary notifications at the configured UTC time."""
         target_time_str = self.config.global_config.daily_summary_time
@@ -257,7 +283,7 @@ class SentinelEngine:
         target_hour, target_min = map(int, target_time_str.split(":"))
 
         while not self._stop_event.is_set():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             target_today = now.replace(
                 hour=target_hour, minute=target_min, second=0, microsecond=0
             )
@@ -270,7 +296,7 @@ class SentinelEngine:
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=seconds_until)
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 states_list = list(self.states.values())
                 if not self.dashboard:
                     console.print("[bold blue]>>> Dispatching daily summary report[/bold blue]")
@@ -289,7 +315,12 @@ class SentinelEngine:
 
         current_http_names = {t.name: t for t in new_config.targets}
         current_tcp_names = {t.name: t for t in new_config.tcp_targets}
-        all_new_names = set(current_http_names.keys()) | set(current_tcp_names.keys())
+        current_dns_names = {d.name: d for d in new_config.dns_targets}
+        all_new_names = (
+            set(current_http_names.keys())
+            | set(current_tcp_names.keys())
+            | set(current_dns_names.keys())
+        )
 
         # Remove targets that no longer exist
         for old_name in list(self.states.keys()):
@@ -324,6 +355,18 @@ class SentinelEngine:
                 self._worker_tasks[name] = t
                 logger.info("Added new TCP target: %s", name)
 
+        # Add or update DNS targets
+        for name, dns in current_dns_names.items():
+            if name not in self.states:
+                self.states[name] = TargetState(name=name, url=f"dns://{dns.host} ({dns.record_type})")
+            if self.running and name not in self._worker_tasks:
+                t = asyncio.create_task(
+                    self._run_dns_target_loop(dns),
+                    name=f"sentinel-dns-{name}",
+                )
+                self._worker_tasks[name] = t
+                logger.info("Added new DNS target: %s", name)
+
     async def run(self) -> None:
         """Start the async engine and monitor all configured targets concurrently."""
         self.running = True
@@ -334,11 +377,15 @@ class SentinelEngine:
             await self.metrics_server.start()
 
         if not self.dashboard:
-            total_count = len(self.config.targets) + len(self.config.tcp_targets)
+            total_count = (
+                len(self.config.targets)
+                + len(self.config.tcp_targets)
+                + len(self.config.dns_targets)
+            )
             console.print(
                 f"[bold cyan]Sentinel started[/bold cyan] "
                 f"monitoring [yellow]{total_count}[/yellow] targets "
-                f"({len(self.config.targets)} HTTP, {len(self.config.tcp_targets)} TCP)"
+                f"({len(self.config.targets)} HTTP, {len(self.config.tcp_targets)} TCP, {len(self.config.dns_targets)} DNS)"
             )
 
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
@@ -358,6 +405,13 @@ class SentinelEngine:
                     name=f"sentinel-tcp-{tcp.name}",
                 )
                 self._worker_tasks[tcp.name] = task
+
+            for dns in self.config.dns_targets:
+                task = asyncio.create_task(
+                    self._run_dns_target_loop(dns),
+                    name=f"sentinel-dns-{dns.name}",
+                )
+                self._worker_tasks[dns.name] = task
 
             summary_task = asyncio.create_task(
                 self._run_daily_summary_loop(),

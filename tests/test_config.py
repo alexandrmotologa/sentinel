@@ -1,13 +1,9 @@
 """Unit tests for Sentinel configuration loading and validation."""
 
-import os
-import tempfile
-from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
 from sentinel.config import (
-    ExpectConfig,
     GlobalConfig,
     SentinelConfig,
     TargetConfig,
@@ -120,3 +116,32 @@ targets:
     assert cfg.telegram.bot_token == "my_token"
     assert len(cfg.targets) == 1
     assert cfg.targets[0].expect.json_match == {"status": "ok"}
+
+
+def test_dns_config_parsing(tmp_path):
+    yaml_content = """
+dns:
+  - name: "Cloudflare A"
+    host: "one.one.one.one"
+    record_type: "A"
+    interval: 30s
+    timeout: 3s
+    expect:
+      expected_ips:
+        - "1.1.1.1"
+      max_latency_ms: 200
+"""
+    file_path = tmp_path / "sites_dns.yaml"
+    file_path.write_text(yaml_content, encoding="utf-8")
+
+    cfg = SentinelConfig.load_yaml(file_path)
+    assert len(cfg.dns_targets) == 1
+    dns = cfg.dns_targets[0]
+    assert dns.name == "Cloudflare A"
+    assert dns.host == "one.one.one.one"
+    assert dns.record_type == "A"
+    assert dns.interval == 30.0
+    assert dns.timeout == 3.0
+    assert dns.expect.expected_ips == ["1.1.1.1"]
+    assert dns.expect.max_latency_ms == 200.0
+

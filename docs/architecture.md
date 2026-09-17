@@ -51,3 +51,32 @@ The evaluator runs each check in a single pass:
 6. Probes TLS certificate validity for HTTPS endpoints when `ssl_check` is enabled.
 
 A target passes only when every configured rule succeeds. If any rule fails, the evaluator returns a structured `CheckResult` with the failure reason.
+
+## Polymorphic Probe Hierarchy
+
+Sentinel leverages an object-oriented probe hierarchy rooted at `BaseProbe`:
+
+```text
+               +---------------+
+               |   BaseProbe   |
+               +-------+-------+
+                       |
+        +--------------+--------------+
+        |              |              |
++-------v-------+ +----v----+  +------v------+
+|   HttpProbe   | | TcpProbe|  |   DnsProbe  |
++---------------+ +---------+  +-------------+
+```
+
+1. **`HttpProbe`**: Performs asynchronous HTTP/HTTPS requests with header injection, body payloads, regex/text body search, JSON dot-notation verification, and TLS certificate validation.
+2. **`TcpProbe`**: Performs low-level network socket connection handshakes to verify port availability on databases, caches, and message brokers.
+3. **`DnsProbe`**: Performs asynchronous DNS resolution using Python's non-blocking `asyncio.get_running_loop().getaddrinfo()` for `A` and `AAAA` records, as well as socket lookups for `CNAME`, `MX`, and `TXT` records. Validates expected IP sets, expected CNAME target canonical names, and lookup latency limits.
+
+## Metrics, Health & Status Page Exporters
+
+When the embedded metrics server is active (`metrics.enabled: true`), Sentinel shares thread-safe state access across several specialized exporters:
+
+- **`PrometheusExporter`**: Formats all target metrics into Prometheus exposition text format version 0.0.4.
+- **`HealthzExporter`**: Generates a real-time JSON report with operational breakdown, latencies, and uptime percentages.
+- **`StatusPageExporter`**: Generates a self-contained, responsive dark-mode HTML dashboard served at `/` and `/status`, complete with client-side polling and responsive CSS styling.
+

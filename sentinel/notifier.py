@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 import html
 import logging
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from sentinel.config import DiscordConfig, SlackConfig, TelegramConfig, WebhookConfig
 from sentinel.state import TargetState, format_duration
-
 
 logger = logging.getLogger("sentinel.notifier")
 
@@ -162,7 +161,7 @@ class TelegramNotifier(BaseNotifier):
         timestamp: datetime | None = None,
     ) -> bool:
         """Send an outage alert when a target fails health checks."""
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
 
         status_text = (
@@ -195,7 +194,7 @@ class TelegramNotifier(BaseNotifier):
         timestamp: datetime | None = None,
     ) -> bool:
         """Send a recovery alert when a failing target returns to healthy status."""
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
 
         duration_str = format_duration(state.previous_downtime_seconds)
@@ -224,7 +223,7 @@ class TelegramNotifier(BaseNotifier):
 
     async def send_test_alert(self) -> bool:
         """Send a test message verifying Telegram credentials."""
-        ts_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        ts_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         message = (
             "🔍 <b>SENTINEL TEST ALERT</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -239,7 +238,7 @@ class TelegramNotifier(BaseNotifier):
         timestamp: datetime | None = None,
     ) -> bool:
         """Send a daily health summary report."""
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
 
         total = len(states)
@@ -302,7 +301,7 @@ class WebhookNotifier(BaseNotifier):
         debounce_threshold: int,
         timestamp: datetime | None = None,
     ) -> bool:
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         payload = {
             "event": "outage",
             "target": state.name,
@@ -321,7 +320,7 @@ class WebhookNotifier(BaseNotifier):
         state: TargetState,
         timestamp: datetime | None = None,
     ) -> bool:
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         payload = {
             "event": "recovery",
             "target": state.name,
@@ -338,7 +337,7 @@ class WebhookNotifier(BaseNotifier):
         payload = {
             "event": "test",
             "message": "Sentinel alert delivery verified",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         return await self.send_webhook(payload)
 
@@ -347,7 +346,7 @@ class WebhookNotifier(BaseNotifier):
         states: list[TargetState],
         timestamp: datetime | None = None,
     ) -> bool:
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         payload = {
             "event": "daily_summary",
             "total_targets": len(states),
@@ -393,7 +392,7 @@ class DiscordNotifier(BaseNotifier):
     async def send_outage_alert(
         self, state: TargetState, debounce_threshold: int, timestamp: datetime | None = None
     ) -> bool:
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         payload = {
             "username": getattr(self.config, "username", "Sentinel"),
             "avatar_url": getattr(self.config, "avatar_url", None) or None,
@@ -416,7 +415,7 @@ class DiscordNotifier(BaseNotifier):
         return await self.send_message(payload)
 
     async def send_recovery_alert(self, state: TargetState, timestamp: datetime | None = None) -> bool:
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         duration_str = format_duration(state.previous_downtime_seconds)
         payload = {
             "username": getattr(self.config, "username", "Sentinel"),
@@ -445,14 +444,14 @@ class DiscordNotifier(BaseNotifier):
                     "title": "🔍 SENTINEL TEST ALERT",
                     "description": "Discord webhook delivery verified successfully.",
                     "color": 3447003,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             ],
         }
         return await self.send_message(payload)
 
     async def send_daily_summary(self, states: list[TargetState], timestamp: datetime | None = None) -> bool:
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         total = len(states)
         healthy = sum(1 for s in states if s.status.value == "UP")
         avg_uptime = (sum(s.uptime_percentage for s in states) / total) if total > 0 else 100.0
@@ -622,7 +621,7 @@ class AlertDispatcher(BaseNotifier):
         timestamp: datetime | None = None,
     ) -> bool:
         """Dispatch outage alerts in parallel to all active notification channels."""
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         results = await asyncio.gather(
             *(
                 channel.send_outage_alert(state, debounce_threshold, ts)
@@ -639,7 +638,7 @@ class AlertDispatcher(BaseNotifier):
         timestamp: datetime | None = None,
     ) -> bool:
         """Dispatch recovery alerts in parallel to all active notification channels."""
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         results = await asyncio.gather(
             *(
                 channel.send_recovery_alert(state, ts)
@@ -668,7 +667,7 @@ class AlertDispatcher(BaseNotifier):
         timestamp: datetime | None = None,
     ) -> bool:
         """Dispatch daily health summary reports in parallel to all configured channels."""
-        ts = timestamp or datetime.now(timezone.utc)
+        ts = timestamp or datetime.now(UTC)
         results = await asyncio.gather(
             *(
                 channel.send_daily_summary(states, ts)

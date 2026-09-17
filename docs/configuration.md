@@ -164,13 +164,14 @@ expect:
 
 ## Metrics Server Settings
 
-The optional `metrics` section enables an embedded HTTP server for Prometheus scraping and JSON health monitoring:
+The optional `metrics` section enables an embedded HTTP server for Prometheus scraping, JSON health monitoring, and a zero-dependency web status page:
 
 - `enabled`: Activates the background HTTP server. Default is `false`.
 - `host`: Listen interface address. Default is `"0.0.0.0"`.
 - `port`: Port number. Default is `9090`.
 
 Endpoints exposed:
+- `/` or `/status`: Built-in zero-dependency dark-mode HTML Web Status Page.
 - `/metrics`: Prometheus text exposition format (gauges and counters).
 - `/healthz`: JSON health status payload.
 
@@ -199,3 +200,43 @@ Use `tcp_targets` to verify network socket connectivity for databases, caches, a
 - `port`: Target TCP port number.
 - `interval`: Interval between checks. Default is `60s`.
 - `timeout`: Socket connection timeout. Default is `5s`.
+
+## DNS Targets
+
+Use `dns_targets` (alias `dns`) to monitor DNS resolution, propagation, and record validity for domain names:
+
+```yaml
+dns_targets:
+  - name: "Main Website DNS (A)"
+    host: "example.com"
+    record_type: "A"
+    interval: 30s
+    timeout: 5s
+    expect:
+      expected_ips:
+        - "93.184.216.34"
+      max_latency_ms: 250
+
+  - name: "CDN Canonical Name"
+    host: "assets.example.com"
+    record_type: "CNAME"
+    expect:
+      expected_cname: "cdn.provider.net"
+
+  - name: "Primary Mail Exchange"
+    host: "example.com"
+    record_type: "MX"
+```
+
+### Parameter Reference
+
+- `name`: Human-readable service label.
+- `host`: Domain name or hostname to query.
+- `record_type`: DNS record type to resolve. Supported: `A`, `AAAA`, `CNAME`, `MX`, `TXT`. Default is `"A"`.
+- `interval`: Interval between queries. Default is `60s`.
+- `timeout`: Resolution timeout in seconds (minimum `0.5s`). Default is `5s`.
+- `expect`: Optional assertion criteria:
+  - `expected_ips`: List of IP addresses that must be present in the resolution result (for `A` or `AAAA`).
+  - `expected_cname`: Target domain that CNAME must point to.
+  - `max_latency_ms`: Maximum query round-trip latency in milliseconds.
+

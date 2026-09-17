@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import pytest
 import httpx
+import pytest
 
 from sentinel.evaluator import CheckResult
 from sentinel.server import MetricsServer, generate_healthz_payload, generate_prometheus_metrics
@@ -110,6 +109,15 @@ async def test_metrics_server_endpoints():
             assert "application/json" in resp_healthz.headers["content-type"]
             data = resp_healthz.json()
             assert data["status"] == "healthy"
+
+            resp_root = await client.get("/")
+            assert resp_root.status_code == 200
+            assert "text/html" in resp_root.headers["content-type"]
+            assert "Sentinel Status Page" in resp_root.text
+
+            resp_status = await client.get("/status")
+            assert resp_status.status_code == 200
+            assert "text/html" in resp_status.headers["content-type"]
 
             resp_404 = await client.get("/unknown-path")
             assert resp_404.status_code == 404

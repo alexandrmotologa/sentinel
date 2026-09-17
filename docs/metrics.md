@@ -1,6 +1,6 @@
 # Metrics and Health Endpoints
 
-Sentinel includes an embedded asynchronous HTTP server that exposes Prometheus metrics and JSON health checks without external web framework dependencies.
+Sentinel includes an embedded asynchronous HTTP server that exposes Prometheus metrics, JSON health checks, and a zero-dependency web status page without external web framework dependencies.
 
 ## Configuration
 
@@ -14,6 +14,24 @@ metrics:
 ```
 
 When enabled, Sentinel starts listening as soon as the daemon starts.
+
+## Web Status Page (`/` and `/status`)
+
+The embedded metrics server serves a self-contained, responsive dark-mode HTML dashboard at both `/` and `/status`.
+
+### Features
+- **Zero external dependencies**: Built purely with vanilla HTML5, modern CSS, and JavaScript. No npm packages or CDNs required.
+- **Real-time target status pills**: Color-coded indicators (`UP` in green, `DOWN` in red, `UNKNOWN` in muted gray).
+- **24-hour uptime ratio bars**: Visual representation of target availability and SLA ratios.
+- **Latency badges**: Sub-100ms displayed in emerald, sub-300ms in yellow/amber, and slow queries in red.
+- **Live client polling**: Asynchronously polls `/healthz` every 5 seconds to update target statuses, latencies, and uptime ratios in real-time without reloading the page.
+- **Network status & error tracking**: Displays last error messages and outage details when a service fails.
+
+Access it directly in your browser or test it via cURL:
+
+```bash
+curl -i http://localhost:9090/status
+```
 
 ## Prometheus Metrics (`/metrics`)
 

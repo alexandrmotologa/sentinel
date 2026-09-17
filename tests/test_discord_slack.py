@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import pytest
+
 import httpx
+import pytest
 
 from sentinel.config import DiscordConfig, SlackConfig
 from sentinel.notifier import AlertDispatcher, DiscordNotifier, SlackNotifier

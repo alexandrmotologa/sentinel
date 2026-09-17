@@ -5,20 +5,19 @@ from __future__ import annotations
 import io
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+import rich.terminal_theme as tt
 from rich.console import Console
 from rich.table import Table
-import rich.terminal_theme as tt
 
 from sentinel.cli import ConfigReportPresenter
 from sentinel.config import SentinelConfig
 from sentinel.dashboard import SentinelDashboard
 from sentinel.engine import SentinelEngine
-from sentinel.server import PrometheusExporter, HealthzExporter
+from sentinel.server import HealthzExporter, PrometheusExporter
 from sentinel.state import TargetState, TargetStatus
-
 
 TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -175,7 +174,7 @@ def generate_dashboard_view(dest_html: Path) -> None:
     stripe_state.total_latency_ms = 502.4 * 320
     stripe_state.last_status_code = 503
     stripe_state.last_error_reason = "Expected status 200, got 503 Service Unavailable"
-    stripe_state.down_since = datetime.now(timezone.utc)
+    stripe_state.down_since = datetime.now(UTC)
 
     pg_state = TargetState(name="Primary PostgreSQL", url="tcp://db.internal:5432")
     pg_state.total_checks = 480

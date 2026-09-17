@@ -5,11 +5,10 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
-
 
 _DURATION_PATTERN = re.compile(
     r"^(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|s|m|h|d)?$",
@@ -251,6 +250,40 @@ class TargetConfig(BaseTargetConfig):
         return v.strip().upper()
 
 
+class DNSExpectConfig(BaseModel):
+    """Assertions evaluated against DNS lookup results."""
+
+    expected_ips: list[str] = Field(default_factory=list, description="List of expected IP addresses")
+    expected_cname: str | None = Field(default=None, description="Expected CNAME target host")
+    max_latency_ms: float | None = Field(default=None, description="Max allowable DNS resolution time")
+
+
+class DNSTargetConfig(BaseModel):
+    """Configuration for a monitored DNS endpoint."""
+
+    name: str = Field(..., description="Unique display name")
+    host: str = Field(..., description="Domain name to resolve (e.g. api.example.com)")
+    record_type: Literal["A", "AAAA", "CNAME", "MX", "TXT"] = Field(default="A", description="DNS record type")
+    interval: float = Field(default=60.0, ge=1.0, description="Probe interval in seconds")
+    timeout: float = Field(default=5.0, ge=0.5, description="DNS query timeout in seconds")
+    expect: DNSExpectConfig = Field(default_factory=DNSExpectConfig)
+    flap_threshold: int = Field(default=2, ge=1)
+
+    @field_validator("interval", "timeout", mode="before")
+    @classmethod
+    def _validate_durations(cls, v: Any) -> float:
+        if v is None:
+            return 60.0
+        return parse_duration(v)
+
+    @field_validator("record_type", mode="before")
+    @classmethod
+    def _normalize_record_type(cls, v: Any) -> str:
+        if isinstance(v, str):
+            return v.strip().upper()
+        return v
+
+
 class SentinelConfig(BaseModel):
     """Top-level Sentinel daemon configuration schema."""
 
@@ -264,6 +297,7 @@ class SentinelConfig(BaseModel):
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     targets: list[TargetConfig] = Field(default_factory=list)
     tcp_targets: list[TCPTargetConfig] = Field(default_factory=list)
+    dns_targets: list[DNSTargetConfig] = Field(default_factory=list, alias="dns")
 
     @model_validator(mode="after")
     def _apply_global_defaults(self) -> SentinelConfig:
@@ -278,6 +312,9 @@ class SentinelConfig(BaseModel):
                 tcp.interval = self.global_config.default_interval
             if tcp.timeout is None:
                 tcp.timeout = self.global_config.default_timeout
+        for dns in self.dns_targets:
+            if dns.flap_threshold == 2 and self.global_config.consecutive_failures_to_alert != 2:
+                dns.flap_threshold = self.global_config.consecutive_failures_to_alert
         return self
 
     @classmethod
@@ -287,7 +324,7 @@ class SentinelConfig(BaseModel):
         if not file_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {file_path}")
 
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
 
         resolved = resolve_env_strings(raw)

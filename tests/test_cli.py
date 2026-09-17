@@ -2,10 +2,10 @@
 
 import asyncio
 import time
-from typer.testing import CliRunner
-from sentinel.cli import app
-from sentinel.engine import get_heartbeat_path
 
+from typer.testing import CliRunner
+
+from sentinel.cli import app
 
 runner = CliRunner()
 
@@ -47,7 +47,7 @@ def test_cli_healthcheck(monkeypatch, tmp_path):
 
 def test_cli_probe_success(monkeypatch, tmp_path):
     import httpx
-    from sentinel import evaluator
+
 
     yaml_content = """
 targets:

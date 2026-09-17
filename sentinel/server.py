@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from sentinel.state import TargetState, TargetStatus
-
+from sentinel.status_page import generate_status_page
 
 logger = logging.getLogger("sentinel.server")
 
@@ -83,7 +84,7 @@ class HealthzExporter:
         all_up = all(s.status == TargetStatus.UP for s in states.values()) if states else True
         return {
             "status": "healthy" if all_up else "degraded",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "total_targets": len(states),
             "healthy_targets": sum(1 for s in states.values() if s.status == TargetStatus.UP),
             "targets": {
@@ -146,6 +147,15 @@ class MetricsServer:
 
     def _route_request(self, path: str, states: dict[str, TargetState]) -> HttpServerResponse:
         """Route incoming URL path to appropriate exporter response."""
+        if path in ("/", "/status", "/status/"):
+            html = generate_status_page(states)
+            return HttpServerResponse(
+                status_code=200,
+                status_text="OK",
+                content_type="text/html; charset=utf-8",
+                body=html.encode("utf-8"),
+            )
+
         if path in ("/metrics", "/metrics/"):
             body = PrometheusExporter.format_metrics(states).encode("utf-8")
             return HttpServerResponse(

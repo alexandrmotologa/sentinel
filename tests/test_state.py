@@ -1,6 +1,6 @@
 """Unit tests for TargetState, debounce protection, and downtime arithmetic."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sentinel.evaluator import CheckResult
 from sentinel.state import TargetState, TargetStatus, format_duration
@@ -19,7 +19,7 @@ def test_state_debounce_and_recovery():
     assert state.status == TargetStatus.UNKNOWN
     assert state.consecutive_failures == 0
 
-    base_time = datetime(2026, 9, 9, 10, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2026, 9, 9, 10, 0, 0, tzinfo=UTC)
 
     # 1. First failure: within debounce window (threshold=2), no outage alert yet
     fail_1 = CheckResult(
@@ -87,7 +87,7 @@ def test_state_debounce_and_recovery():
 
 def test_transient_blip_does_not_send_recovery():
     state = TargetState(name="Blip Target", url="https://blip.com")
-    base_time = datetime(2026, 9, 9, 10, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2026, 9, 9, 10, 0, 0, tzinfo=UTC)
 
     # Single failure (threshold=2)
     fail = CheckResult(
