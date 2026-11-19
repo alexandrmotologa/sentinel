@@ -144,10 +144,7 @@ class ProbeRunner:
         async with create_async_client() as client:
             http_probes = [(t.name, t.url, HttpProbe(t, client)) for t in cfg.targets]
             tcp_probes = [(tcp.name, f"{tcp.host}:{tcp.port}", TcpProbe(tcp)) for tcp in cfg.tcp_targets]
-            dns_probes = [
-                (dns.name, f"{dns.host} ({dns.record_type})", DnsProbe(dns))
-                for dns in cfg.dns_targets
-            ]
+            dns_probes = [(dns.name, f"{dns.host} ({dns.record_type})", DnsProbe(dns)) for dns in cfg.dns_targets]
             ping_probes = [(ping.name, ping.host, PingProbe(ping)) for ping in cfg.ping_targets]
 
             http_tasks = [probe.check() for _, _, probe in http_probes]
@@ -238,9 +235,7 @@ def test_alert(
 
     dispatcher = AlertDispatcher(cfg.telegram, cfg.webhook, cfg.discord, cfg.slack)
     if not dispatcher.is_configured:
-        console.print(
-            "[bold yellow]Warning:[/bold yellow] No notification channel is enabled in configuration."
-        )
+        console.print("[bold yellow]Warning:[/bold yellow] No notification channel is enabled in configuration.")
         raise typer.Exit(code=1)
 
     console.print("[cyan]Sending test alert across configured channels...[/cyan]")
@@ -391,6 +386,7 @@ def run(
             dash = SentinelDashboard(engine)
             engine.dashboard = dash
             with Live(dash.render(), refresh_per_second=2, console=console) as live:
+
                 async def _refresh_dashboard() -> None:
                     while engine.running:
                         live.update(dash.render())
@@ -435,9 +431,7 @@ def mute(
     """Temporarily mute alert notifications for a target."""
     mgr = MaintenanceManager(mutes_file=mutes_file)
     mgr.mute(target_name, duration_minutes=duration_minutes, reason=reason)
-    console.print(
-        f"[bold green]Target '{target_name}' muted for {duration_minutes}m.[/bold green] Reason: {reason}"
-    )
+    console.print(f"[bold green]Target '{target_name}' muted for {duration_minutes}m.[/bold green] Reason: {reason}")
 
 
 @app.command(name="unmute")

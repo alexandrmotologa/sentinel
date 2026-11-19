@@ -61,7 +61,9 @@ def parse_ping_output(output: str, returncode: int, elapsed_ms: float) -> tuple[
             error_reason = "Destination host unreachable"
         elif "request timed out" in lower_out:
             error_reason = "Request timed out"
-        elif any(phrase in lower_out for phrase in ["could not find host", "name or service not known", "cannot resolve"]):
+        elif any(
+            phrase in lower_out for phrase in ["could not find host", "name or service not known", "cannot resolve"]
+        ):
             error_reason = "Host resolution failed"
         else:
             error_reason = f"Host unreachable ({int(packet_loss)}% packet loss)"
@@ -126,10 +128,7 @@ class PingProbe(BaseProbe):
                 checked_at=datetime.now(UTC),
             )
 
-        if (
-            self.target.expect.max_latency_ms is not None
-            and latency_ms > self.target.expect.max_latency_ms
-        ):
+        if self.target.expect.max_latency_ms is not None and latency_ms > self.target.expect.max_latency_ms:
             return CheckResult(
                 passed=False,
                 status_phrase="High Latency",

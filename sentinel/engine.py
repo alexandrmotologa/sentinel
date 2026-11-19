@@ -178,15 +178,13 @@ class TargetWorker:
                     result_passed=result.passed,
                     latency_ms=result.latency_ms,
                     error_reason=result.error_reason,
-                    status_text=result.http_status_text if (not self.is_tcp and not self.is_dns and not self.is_ping) else "",
+                    status_text=result.http_status_text
+                    if (not self.is_tcp and not self.is_dns and not self.is_ping)
+                    else "",
                     is_muted=is_muted,
                 )
 
-            prefix = (
-                "TCP "
-                if self.is_tcp
-                else ("DNS " if self.is_dns else ("PING " if self.is_ping else ""))
-            )
+            prefix = "TCP " if self.is_tcp else ("DNS " if self.is_dns else ("PING " if self.is_ping else ""))
 
             if should_outage:
                 if self.incident_store:
@@ -209,9 +207,7 @@ class TargetWorker:
                         )
                 else:
                     if self.dashboard:
-                        self.dashboard.record_event(
-                            "outage", f"{prefix}{self.name} failed: {result.error_reason}"
-                        )
+                        self.dashboard.record_event("outage", f"{prefix}{self.name} failed: {result.error_reason}")
                     else:
                         console.print(
                             f"[bold red]>>> Outage alert dispatched for {prefix}{self.name} "
@@ -410,9 +406,7 @@ class SentinelEngine:
 
         while not self._stop_event.is_set():
             now = datetime.now(UTC)
-            target_today = now.replace(
-                hour=target_hour, minute=target_min, second=0, microsecond=0
-            )
+            target_today = now.replace(hour=target_hour, minute=target_min, second=0, microsecond=0)
 
             if now >= target_today:
                 seconds_until = (target_today.timestamp() + 86400) - now.timestamp()
@@ -569,9 +563,7 @@ class SentinelEngine:
             )
 
             try:
-                await asyncio.gather(
-                    *self._worker_tasks.values(), summary_task, return_exceptions=True
-                )
+                await asyncio.gather(*self._worker_tasks.values(), summary_task, return_exceptions=True)
             except asyncio.CancelledError:
                 pass
             finally:

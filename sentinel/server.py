@@ -31,42 +31,50 @@ class PrometheusExporter:
             target_escaped = name.replace('"', '\\"')
             lines.append(f'sentinel_target_up{{target="{target_escaped}"}} {val}')
 
-        lines.extend([
-            "",
-            "# HELP sentinel_target_latency_seconds Round-trip latency in seconds",
-            "# TYPE sentinel_target_latency_seconds gauge",
-        ])
+        lines.extend(
+            [
+                "",
+                "# HELP sentinel_target_latency_seconds Round-trip latency in seconds",
+                "# TYPE sentinel_target_latency_seconds gauge",
+            ]
+        )
         for name, state in states.items():
             lat_sec = state.last_latency_ms / 1000.0
             target_escaped = name.replace('"', '\\"')
             lines.append(f'sentinel_target_latency_seconds{{target="{target_escaped}"}} {lat_sec:.6f}')
 
-        lines.extend([
-            "",
-            "# HELP sentinel_target_consecutive_failures Number of consecutive failures",
-            "# TYPE sentinel_target_consecutive_failures gauge",
-        ])
+        lines.extend(
+            [
+                "",
+                "# HELP sentinel_target_consecutive_failures Number of consecutive failures",
+                "# TYPE sentinel_target_consecutive_failures gauge",
+            ]
+        )
         for name, state in states.items():
             target_escaped = name.replace('"', '\\"')
             lines.append(
                 f'sentinel_target_consecutive_failures{{target="{target_escaped}"}} {state.consecutive_failures}'
             )
 
-        lines.extend([
-            "",
-            "# HELP sentinel_target_uptime_ratio Target uptime ratio between 0.0 and 1.0",
-            "# TYPE sentinel_target_uptime_ratio gauge",
-        ])
+        lines.extend(
+            [
+                "",
+                "# HELP sentinel_target_uptime_ratio Target uptime ratio between 0.0 and 1.0",
+                "# TYPE sentinel_target_uptime_ratio gauge",
+            ]
+        )
         for name, state in states.items():
             ratio = state.uptime_percentage / 100.0
             target_escaped = name.replace('"', '\\"')
             lines.append(f'sentinel_target_uptime_ratio{{target="{target_escaped}"}} {ratio:.4f}')
 
-        lines.extend([
-            "",
-            "# HELP sentinel_checks_total Total checks performed on target",
-            "# TYPE sentinel_checks_total counter",
-        ])
+        lines.extend(
+            [
+                "",
+                "# HELP sentinel_checks_total Total checks performed on target",
+                "# TYPE sentinel_checks_total counter",
+            ]
+        )
         for name, state in states.items():
             target_escaped = name.replace('"', '\\"')
             lines.append(f'sentinel_checks_total{{target="{target_escaped}"}} {state.total_checks}')
@@ -121,11 +129,13 @@ class HttpServerResponse:
     body: bytes
 
     def to_bytes(self) -> bytes:
-        """Encode HTTP response according to HTTP/1.1 protocol."""
+        """Encode HTTP response according to HTTP/1.1 protocol with permissive CORS."""
         headers = (
             f"HTTP/1.1 {self.status_code} {self.status_text}\r\n"
             f"Content-Type: {self.content_type}\r\n"
             f"Content-Length: {len(self.body)}\r\n"
+            f"Access-Control-Allow-Origin: *\r\n"
+            f"Access-Control-Allow-Methods: GET, OPTIONS\r\n"
             f"Connection: close\r\n\r\n"
         )
         return headers.encode("ascii") + self.body
@@ -190,6 +200,35 @@ class MetricsServer:
                 body=body,
             )
 
+        if path in ("/status.json", "/api/status", "/api/status/"):
+            data = {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "overall_status": (
+                    "operational" if all(s.status == TargetStatus.UP for s in states.values()) else "degraded"
+                ),
+                "total_targets": len(states),
+                "healthy_targets": sum(1 for s in states.values() if s.status == TargetStatus.UP),
+                "targets": [
+                    {
+                        "name": name,
+                        "url": s.url,
+                        "status": s.status.value,
+                        "last_latency_ms": s.last_latency_ms,
+                        "uptime_percentage": round(s.uptime_percentage, 2),
+                        "consecutive_failures": s.consecutive_failures,
+                        "total_checks": s.total_checks,
+                    }
+                    for name, s in states.items()
+                ],
+            }
+            body = json.dumps(data, indent=2).encode("utf-8")
+            return HttpServerResponse(
+                status_code=200,
+                status_text="OK",
+                content_type="application/json; charset=utf-8",
+                body=body,
+            )
+
         if path in ("/healthz", "/health", "/healthz/"):
             payload = HealthzExporter.format_payload(states)
             body = json.dumps(payload, indent=2).encode("utf-8")
@@ -208,9 +247,7 @@ class MetricsServer:
             body=b"Not Found\n",
         )
 
-    async def _handle_client(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             line = await reader.readline()
             if not line:
@@ -243,9 +280,7 @@ class MetricsServer:
 
     async def start(self) -> None:
         """Start listening for incoming HTTP connections."""
-        self.server = await asyncio.start_server(
-            self._handle_client, host=self.host, port=self.port
-        )
+        self.server = await asyncio.start_server(self._handle_client, host=self.host, port=self.port)
         logger.info("Metrics server listening on http://%s:%d", self.host, self.port)
 
     async def stop(self) -> None:

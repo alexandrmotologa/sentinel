@@ -2,22 +2,25 @@
 
 import asyncio
 import time
+from pathlib import Path
 
 from typer.testing import CliRunner
 
+from sentinel import __version__
 from sentinel.cli import app
 
 runner = CliRunner()
+EXAMPLE_CONFIG = Path(__file__).resolve().parent.parent / "sites.example.yaml"
 
 
 def test_cli_version():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "Sentinel v0.1.0" in result.output
+    assert f"Sentinel v{__version__}" in result.output
 
 
 def test_cli_check_config_valid():
-    result = runner.invoke(app, ["check-config", "sites.example.yaml"])
+    result = runner.invoke(app, ["check-config", str(EXAMPLE_CONFIG)])
     assert result.exit_code == 0
     assert "Configuration valid" in result.output
     assert "Configured Targets" in result.output
@@ -47,7 +50,6 @@ def test_cli_healthcheck(monkeypatch, tmp_path):
 
 def test_cli_probe_success(monkeypatch, tmp_path):
     import httpx
-
 
     yaml_content = """
 targets:
@@ -88,8 +90,10 @@ def test_cli_probe_tcp(monkeypatch, tmp_path):
         class MockWriter:
             def close(self):
                 pass
+
             async def wait_closed(self):
                 pass
+
         return None, MockWriter()
 
     monkeypatch.setattr(asyncio, "open_connection", mock_open_connection)

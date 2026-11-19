@@ -64,7 +64,8 @@ def test_cli_incidents_command(tmp_path: Path) -> None:
 
 def test_cli_check_config_with_ping_and_maintenance(tmp_path: Path) -> None:
     cfg_file = tmp_path / "sites_v2.yaml"
-    cfg_file.write_text("""
+    cfg_file.write_text(
+        """
 global:
   default_interval: 30s
   db_path: "data/sentinel.db"
@@ -87,7 +88,9 @@ status_page:
   title: "Network Status"
   company_name: "Internal Net"
   announcement_banner: "All systems nominal"
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
     res = runner.invoke(app, ["check-config", str(cfg_file)])
     assert res.exit_code == 0

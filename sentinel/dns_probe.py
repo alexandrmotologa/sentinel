@@ -223,10 +223,7 @@ class DnsProbe(BaseProbe):
                 status_code=None,
                 status_phrase="High Latency",
                 latency_ms=latency_ms,
-                error_reason=(
-                    f"DNS lookup latency {latency_ms:.0f} ms exceeded "
-                    f"limit {expect.max_latency_ms:.0f} ms"
-                ),
+                error_reason=(f"DNS lookup latency {latency_ms:.0f} ms exceeded limit {expect.max_latency_ms:.0f} ms"),
                 resolved_ips=resolved_ips,
                 checked_at=datetime.now(UTC),
             )
@@ -240,9 +237,7 @@ class DnsProbe(BaseProbe):
                     status_code=None,
                     status_phrase="IP Mismatch",
                     latency_ms=latency_ms,
-                    error_reason=(
-                        f"Expected IP(s) {missing} not found in resolved IPs: {resolved_ips}"
-                    ),
+                    error_reason=(f"Expected IP(s) {missing} not found in resolved IPs: {resolved_ips}"),
                     resolved_ips=resolved_ips,
                     checked_at=datetime.now(UTC),
                 )
@@ -256,9 +251,7 @@ class DnsProbe(BaseProbe):
                     status_code=None,
                     status_phrase="CNAME Mismatch",
                     latency_ms=latency_ms,
-                    error_reason=(
-                        f"Expected CNAME '{expect.expected_cname}', got '{cname_val}'"
-                    ),
+                    error_reason=(f"Expected CNAME '{expect.expected_cname}', got '{cname_val}'"),
                     resolved_ips=resolved_ips,
                     checked_at=datetime.now(UTC),
                 )

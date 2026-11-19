@@ -132,16 +132,8 @@ class IncidentStore:
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> IncidentRecord:
         """Convert an SQLite row to a typed IncidentRecord instance."""
-        started_at = (
-            datetime.fromisoformat(row["started_at"])
-            if row["started_at"]
-            else datetime.now(UTC)
-        )
-        resolved_at = (
-            datetime.fromisoformat(row["resolved_at"])
-            if row["resolved_at"]
-            else None
-        )
+        started_at = datetime.fromisoformat(row["started_at"]) if row["started_at"] else datetime.now(UTC)
+        resolved_at = datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
         return IncidentRecord(
             id=row["id"],
             target_name=row["target_name"],
@@ -199,9 +191,7 @@ class IncidentStore:
         conn = self._get_connection()
         with conn:
             if incident_id is not None:
-                cursor = conn.execute(
-                    "SELECT * FROM incidents WHERE id = ?;", (incident_id,)
-                )
+                cursor = conn.execute("SELECT * FROM incidents WHERE id = ?;", (incident_id,))
             else:
                 cursor = conn.execute(
                     "SELECT * FROM incidents WHERE target_name = ? AND status = 'ongoing' ORDER BY id DESC LIMIT 1;",
@@ -212,16 +202,8 @@ class IncidentStore:
                 return None
 
             inc_id = row["id"]
-            start_dt = (
-                datetime.fromisoformat(row["started_at"])
-                if row["started_at"]
-                else rec_dt
-            )
-            dur = (
-                duration_seconds
-                if duration_seconds is not None
-                else max(0.0, (rec_dt - start_dt).total_seconds())
-            )
+            start_dt = datetime.fromisoformat(row["started_at"]) if row["started_at"] else rec_dt
+            dur = duration_seconds if duration_seconds is not None else max(0.0, (rec_dt - start_dt).total_seconds())
 
             conn.execute(
                 """
@@ -234,7 +216,9 @@ class IncidentStore:
             updated_cursor = conn.execute("SELECT * FROM incidents WHERE id = ?;", (inc_id,))
             updated_row = updated_cursor.fetchone()
             if updated_row:
-                logger.info("Recorded recovery for target '%s' (incident #%d, duration %.1fs)", target_name, inc_id, dur)
+                logger.info(
+                    "Recorded recovery for target '%s' (incident #%d, duration %.1fs)", target_name, inc_id, dur
+                )
                 return self._row_to_record(updated_row)
         return None
 

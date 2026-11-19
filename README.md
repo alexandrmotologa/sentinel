@@ -81,12 +81,13 @@ Built-in async HTTP service exposing Prometheus exposition metrics on port 9090 
   <img src="docs/screenshots/04_metrics.png" alt="Prometheus and Healthz Endpoints" width="860">
 </p>
 
-### 5. Built-in Web Status Page (`/` and `/status`)
-A zero-dependency, ultra-lightweight dark mode web dashboard served directly by the internal HTTP server on port 9090. Features live status pills, 24-hour uptime ratio bars, latency metrics, and auto-updating client-side polling.
+### 5. Built-in Web Status Page (`/` and `/status`) & JSON API (`/status.json`)
+A zero-dependency, ultra-lightweight dark mode web dashboard served directly by the internal HTTP server on port 9090. Features live status pills, 24-hour uptime ratio bars, latency metrics, and auto-updating client-side polling. Also serves `/status.json` with permissive CORS for external status dashboards and widgets.
 
 ```bash
 # Available when metrics.enabled is true
 curl http://localhost:9090/status
+curl http://localhost:9090/status.json
 ```
 
 ## Quick Start

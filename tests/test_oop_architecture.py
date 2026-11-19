@@ -55,9 +55,7 @@ class DummyNotifier(BaseNotifier):
         self.test_alerts += 1
         return True
 
-    async def send_daily_summary(
-        self, states: list[TargetState], timestamp: datetime | None = None
-    ) -> bool:
+    async def send_daily_summary(self, states: list[TargetState], timestamp: datetime | None = None) -> bool:
         self.summaries += 1
         return True
 
@@ -169,6 +167,7 @@ def test_heartbeat_service(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_target_worker_execution(tmp_path: Path):
     """Verify TargetWorker executes probe and manages notifications cleanly."""
+
     class MockProbe(BaseProbe):
         def __init__(self, target_name: str, passed: bool) -> None:
             self.target_name = target_name

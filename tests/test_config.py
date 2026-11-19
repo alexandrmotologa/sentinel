@@ -144,4 +144,3 @@ dns:
     assert dns.timeout == 3.0
     assert dns.expect.expected_ips == ["1.1.1.1"]
     assert dns.expect.max_latency_ms == 200.0
-

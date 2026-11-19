@@ -256,8 +256,7 @@ class TelegramNotifier(BaseNotifier):
         for s in states:
             icon = "🟢" if s.status.value == "UP" else "🔴"
             rows.append(
-                f"{icon} <b>{html.escape(s.name)}</b>: {s.uptime_percentage:.1f}% uptime "
-                f"({int(s.last_latency_ms)} ms)"
+                f"{icon} <b>{html.escape(s.name)}</b>: {s.uptime_percentage:.1f}% uptime ({int(s.last_latency_ms)} ms)"
             )
 
         breakdown = "\n".join(rows)
@@ -425,7 +424,11 @@ class DiscordNotifier(BaseNotifier):
                         {"name": "Reason", "value": state.last_error_reason or "Failed", "inline": False},
                         {"name": "HTTP Status", "value": str(state.last_status_code or "N/A"), "inline": True},
                         {"name": "Latency", "value": f"{int(state.last_latency_ms)} ms", "inline": True},
-                        {"name": "Consecutive Failures", "value": f"{state.consecutive_failures} / {debounce_threshold}", "inline": True},
+                        {
+                            "name": "Consecutive Failures",
+                            "value": f"{state.consecutive_failures} / {debounce_threshold}",
+                            "inline": True,
+                        },
                     ],
                     "timestamp": ts.isoformat(),
                 }
@@ -733,11 +736,7 @@ class AlertDispatcher(BaseNotifier):
     async def send_test_alert(self) -> bool:
         """Dispatch test verification alerts in parallel to all configured channels."""
         results = await asyncio.gather(
-            *(
-                channel.send_test_alert()
-                for channel in self._channels
-                if channel.is_configured
-            ),
+            *(channel.send_test_alert() for channel in self._channels if channel.is_configured),
             return_exceptions=True,
         )
         return any(r is True for r in results)
@@ -750,11 +749,7 @@ class AlertDispatcher(BaseNotifier):
         """Dispatch daily health summary reports in parallel to all configured channels."""
         ts = timestamp or datetime.now(UTC)
         results = await asyncio.gather(
-            *(
-                channel.send_daily_summary(states, ts)
-                for channel in self._channels
-                if channel.is_configured
-            ),
+            *(channel.send_daily_summary(states, ts) for channel in self._channels if channel.is_configured),
             return_exceptions=True,
         )
         return any(r is True for r in results)

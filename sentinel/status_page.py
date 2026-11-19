@@ -18,6 +18,7 @@ class _RenderPageCallable:
 
     def __get__(self, instance: Any, owner: type[Any] | None = None) -> Any:
         if instance is not None:
+
             def _instance_caller(
                 states: dict[str, TargetState] | list[TargetState],
                 config: StatusPageConfig | None = None,
@@ -35,6 +36,7 @@ class _RenderPageCallable:
                     recent_incidents=recent_incidents,
                     muted_targets=muted_targets,
                 )
+
             return _instance_caller
 
         def _class_caller(
@@ -54,6 +56,7 @@ class _RenderPageCallable:
                 recent_incidents=recent_incidents,
                 muted_targets=muted_targets,
             )
+
         return _class_caller
 
 
@@ -94,40 +97,32 @@ class StatusPageExporter:
         elif down_targets == 0:
             system_status = "ALL SYSTEMS OPERATIONAL"
             status_theme = "operational"
-            global_uptime = (
-                sum(s.uptime_percentage for s in states.values()) / total_targets
-            )
-            avg_latency = (
-                sum(s.average_latency_ms for s in states.values()) / total_targets
-            )
+            global_uptime = sum(s.uptime_percentage for s in states.values()) / total_targets
+            avg_latency = sum(s.average_latency_ms for s in states.values()) / total_targets
         elif down_targets < total_targets:
             system_status = "PARTIAL OUTAGE"
             status_theme = "partial"
-            global_uptime = (
-                sum(s.uptime_percentage for s in states.values()) / total_targets
-            )
-            avg_latency = (
-                sum(s.average_latency_ms for s in states.values()) / total_targets
-            )
+            global_uptime = sum(s.uptime_percentage for s in states.values()) / total_targets
+            avg_latency = sum(s.average_latency_ms for s in states.values()) / total_targets
         else:
             system_status = "MAJOR OUTAGE"
             status_theme = "major"
-            global_uptime = (
-                sum(s.uptime_percentage for s in states.values()) / total_targets
-            )
-            avg_latency = (
-                sum(s.average_latency_ms for s in states.values()) / total_targets
-            )
+            global_uptime = sum(s.uptime_percentage for s in states.values()) / total_targets
+            avg_latency = sum(s.average_latency_ms for s in states.values()) / total_targets
 
         # Cards grid
         cards_html = []
         for name, state in states.items():
             cards_html.append(StatusPageExporter._render_target_card(name, state, is_muted=(name in mutes_set)))
 
-        cards_grid = "\n".join(cards_html) if cards_html else (
-            """<div class="empty-state">
+        cards_grid = (
+            "\n".join(cards_html)
+            if cards_html
+            else (
+                """<div class="empty-state">
                 <p>No endpoints configured for monitoring.</p>
             </div>"""
+            )
         )
 
         # Branding
@@ -892,11 +887,7 @@ class StatusPageExporter:
                 status_raw = str(inc.status or "resolved").lower()
                 if getattr(inc, "resolved_at", None) is not None:
                     status_raw = "resolved"
-                started_raw = (
-                    inc.started_at.strftime("%Y-%m-%d %H:%M:%S")
-                    if getattr(inc, "started_at", None)
-                    else ""
-                )
+                started_raw = inc.started_at.strftime("%Y-%m-%d %H:%M:%S") if getattr(inc, "started_at", None) else ""
                 duration_val = inc.duration_seconds
                 error_raw = inc.error_reason
             else:
@@ -911,11 +902,7 @@ class StatusPageExporter:
             safe_name = html.escape(str(target_name or "Unknown Target"))
             safe_status = "Ongoing" if status_raw == "ongoing" else "Resolved"
             status_class = "ongoing" if status_raw == "ongoing" else "resolved"
-            started_at = (
-                started_raw + " UTC"
-                if not started_raw.endswith("UTC")
-                else started_raw
-            )
+            started_at = started_raw + " UTC" if not started_raw.endswith("UTC") else started_raw
             duration = format_duration(float(duration_val or 0.0))
             reason = html.escape(str(error_raw or "Service health check failure"))
 
@@ -1066,6 +1053,4 @@ def generate_status_page(
     active_mutes: list[str] | None = None,
 ) -> str:
     """Module-level facade generating the Sentinel HTML status page."""
-    return StatusPageExporter.render_page(
-        states, config=config, incidents=incidents, active_mutes=active_mutes
-    )
+    return StatusPageExporter.render_page(states, config=config, incidents=incidents, active_mutes=active_mutes)

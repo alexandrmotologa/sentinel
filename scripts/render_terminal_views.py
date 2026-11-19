@@ -121,7 +121,7 @@ def extract_rich_components(full_html: str) -> tuple[str, str]:
     """Extract <style> content and <pre> content from rich export_html, boosting contrast."""
     style_start = full_html.find("<style>")
     style_end = full_html.find("</style>")
-    styles = full_html[style_start + 7:style_end] if style_start != -1 and style_end != -1 else ""
+    styles = full_html[style_start + 7 : style_end] if style_start != -1 and style_end != -1 else ""
 
     clean_styles = []
     in_body = False
@@ -139,7 +139,7 @@ def extract_rich_components(full_html: str) -> tuple[str, str]:
 
     pre_start = full_html.find("<pre")
     pre_end = full_html.rfind("</pre>")
-    body_content = full_html[pre_start:pre_end + 6] if pre_start != -1 and pre_end != -1 else full_html
+    body_content = full_html[pre_start : pre_end + 6] if pre_start != -1 and pre_end != -1 else full_html
     return "\n".join(clean_styles), body_content
 
 
@@ -267,6 +267,7 @@ def generate_check_config_view(dest_html: Path) -> None:
 
     cfg = SentinelConfig.load_yaml(Path("sites.example.yaml"))
     import sentinel.cli
+
     orig_console = sentinel.cli.console
     sentinel.cli.console = console
     try:
@@ -300,7 +301,9 @@ def generate_metrics_view(dest_html: Path) -> None:
     healthz_data = HealthzExporter.format_payload(states)
     console.print(f"[green]{json.dumps(healthz_data, indent=2)}[/green]\n")
 
-    console.print("[bold cyan]$ curl -s http://127.0.0.1:9090/metrics | grep -E '^#|sentinel_' | head -n 12[/bold cyan]")
+    console.print(
+        "[bold cyan]$ curl -s http://127.0.0.1:9090/metrics | grep -E '^#|sentinel_' | head -n 12[/bold cyan]"
+    )
     metrics_str = PrometheusExporter.format_metrics(states)
     for line in metrics_str.strip().split("\n")[:12]:
         if line.startswith("# HELP") or line.startswith("# TYPE"):

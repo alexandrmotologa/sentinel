@@ -129,9 +129,7 @@ class WebhookConfig(BaseModel):
     """Generic HTTP webhook alerting configuration."""
 
     url: str = Field(default="", description="Webhook destination URL for JSON payloads")
-    headers: dict[str, str] = Field(
-        default_factory=dict, description="Custom HTTP headers for webhook POST"
-    )
+    headers: dict[str, str] = Field(default_factory=dict, description="Custom HTTP headers for webhook POST")
     enabled: bool = Field(default=True, description="Enable webhook notifications")
 
     @property
@@ -179,12 +177,8 @@ class BaseTargetConfig(BaseModel):
     """Abstract base configuration for any monitored target."""
 
     name: str = Field(..., description="Descriptive unique target name")
-    interval: float | None = Field(
-        default=None, description="Check interval in seconds (overrides global default)"
-    )
-    timeout: float | None = Field(
-        default=None, description="Connection timeout in seconds (overrides global default)"
-    )
+    interval: float | None = Field(default=None, description="Check interval in seconds (overrides global default)")
+    timeout: float | None = Field(default=None, description="Connection timeout in seconds (overrides global default)")
     notify: list[str] = Field(
         default_factory=list,
         description="Specific notification channels to alert for this target (e.g. ['telegram', 'slack']). Empty means all.",
@@ -361,7 +355,6 @@ class StatusPageConfig(BaseModel):
     @property
     def announcement_banner(self) -> str:
         return self.announcement
-
 
 
 class SentinelConfig(BaseModel):

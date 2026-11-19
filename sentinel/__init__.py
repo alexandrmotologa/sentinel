@@ -19,7 +19,7 @@ from sentinel.server import MetricsServer
 from sentinel.state import TargetState, TargetStatus
 from sentinel.storage import IncidentRecord, IncidentStore
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "AlertDispatcher",
@@ -51,4 +51,3 @@ __all__ = [
     "__version__",
     "evaluate_ping_target",
 ]
-

@@ -77,9 +77,7 @@ async def test_recovery_alert_formatting():
         return httpx.Response(status_code=200, json={"ok": True})
 
     transport = httpx.MockTransport(handler)
-    config = TelegramConfig(
-        bot_token="test_token", chat_id="12345", send_silently=True, enabled=True
-    )
+    config = TelegramConfig(bot_token="test_token", chat_id="12345", send_silently=True, enabled=True)
     notifier = TelegramNotifier(config)
 
     state = TargetState(

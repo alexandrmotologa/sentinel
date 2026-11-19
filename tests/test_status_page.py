@@ -108,7 +108,7 @@ def test_status_page_xss_escaping():
     """Verify that malicious script tags in target names or error strings are safely escaped."""
     malicious_name = '<script>alert("pwned")</script>'
     malicious_url = 'https://example.com/"><img src=x onerror=alert(1)>'
-    malicious_error = '<b onmouseover=alert(1)>danger</b>'
+    malicious_error = "<b onmouseover=alert(1)>danger</b>"
 
     state = TargetState(name=malicious_name, url=malicious_url)
     state.status = TargetStatus.DOWN

@@ -30,12 +30,14 @@ class SpyNotifier(BaseNotifier):
         timestamp: datetime | None = None,
         severity: str = "critical",
     ) -> bool:
-        self.outages.append({
-            "target": state.name,
-            "threshold": debounce_threshold,
-            "severity": severity,
-            "timestamp": timestamp,
-        })
+        self.outages.append(
+            {
+                "target": state.name,
+                "threshold": debounce_threshold,
+                "severity": severity,
+                "timestamp": timestamp,
+            }
+        )
         return True
 
     async def send_recovery_alert(
@@ -44,11 +46,13 @@ class SpyNotifier(BaseNotifier):
         timestamp: datetime | None = None,
         severity: str = "critical",
     ) -> bool:
-        self.recoveries.append({
-            "target": state.name,
-            "severity": severity,
-            "timestamp": timestamp,
-        })
+        self.recoveries.append(
+            {
+                "target": state.name,
+                "severity": severity,
+                "timestamp": timestamp,
+            }
+        )
         return True
 
     async def send_test_alert(self) -> bool:

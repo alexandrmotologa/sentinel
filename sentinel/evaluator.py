@@ -43,6 +43,7 @@ def create_async_client(**kwargs: Any) -> httpx.AsyncClient:
     """Create an httpx.AsyncClient with HTTP/2 enabled when available."""
     try:
         import h2  # noqa: F401
+
         has_http2 = True
     except ImportError:
         has_http2 = False
@@ -54,6 +55,7 @@ def create_async_client(**kwargs: Any) -> httpx.AsyncClient:
 # ---------------------------------------------------------------------------
 # Assertion Strategy Components
 # ---------------------------------------------------------------------------
+
 
 def _check_status_code(expected: Any, actual: int) -> tuple[bool, str | None]:
     """Validate actual status code against expected integer, list, or range string."""
@@ -156,9 +158,7 @@ async def get_ssl_days_left(url: str, timeout: float = 5.0) -> int:
                 if not isinstance(not_after_val, str):
                     return 0
                 # Format: 'May 26 23:59:59 2026 GMT'
-                expire_date = datetime.strptime(not_after_val, "%b %d %H:%M:%S %Y %Z").replace(
-                    tzinfo=UTC
-                )
+                expire_date = datetime.strptime(not_after_val, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
                 now = datetime.now(UTC)
                 delta = expire_date - now
                 return max(0, delta.days)
@@ -291,10 +291,7 @@ class SslCertificateAssertion(BaseAssertion):
             # Delegate through module-level function to honor any monkeypatching in tests
             ssl_days = await get_ssl_days_left(url, timeout=min(timeout, 5.0))
             if ssl_days <= expect.ssl_warn_days:
-                reason = (
-                    f"SSL certificate expires in {ssl_days} days "
-                    f"(threshold: {expect.ssl_warn_days} days)"
-                )
+                reason = f"SSL certificate expires in {ssl_days} days (threshold: {expect.ssl_warn_days} days)"
                 return False, reason, ssl_days
             return True, None, ssl_days
         except Exception as exc:
@@ -342,6 +339,7 @@ class HttpAssertionPipeline:
 # ---------------------------------------------------------------------------
 # Polymorphic Probes
 # ---------------------------------------------------------------------------
+
 
 class BaseProbe(ABC):
     """Abstract base class for all endpoint health probes."""

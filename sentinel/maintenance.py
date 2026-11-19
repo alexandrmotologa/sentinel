@@ -29,13 +29,20 @@ _ONE_OFF_PATTERN = re.compile(
 )
 
 _DAY_ALIASES = {
-    "mon": 0, "monday": 0,
-    "tue": 1, "tuesday": 1,
-    "wed": 2, "wednesday": 2,
-    "thu": 3, "thursday": 3,
-    "fri": 4, "friday": 4,
-    "sat": 5, "saturday": 5,
-    "sun": 6, "sunday": 6,
+    "mon": 0,
+    "monday": 0,
+    "tue": 1,
+    "tuesday": 1,
+    "wed": 2,
+    "wednesday": 2,
+    "thu": 3,
+    "thursday": 3,
+    "fri": 4,
+    "friday": 4,
+    "sat": 5,
+    "saturday": 5,
+    "sun": 6,
+    "sunday": 6,
 }
 
 
@@ -139,11 +146,7 @@ class MaintenanceManager:
             try:
                 expires_at = datetime.fromisoformat(info["expires_at"])
                 if expires_at > current:
-                    muted_at = (
-                        datetime.fromisoformat(info["muted_at"])
-                        if "muted_at" in info
-                        else current
-                    )
+                    muted_at = datetime.fromisoformat(info["muted_at"]) if "muted_at" in info else current
                     active.append(
                         ActiveMute(
                             target_name=target_name,

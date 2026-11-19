@@ -26,7 +26,8 @@ def test_incident_store_lifecycle(tmp_path: Path) -> None:
         assert mode.lower() == "wal"
 
     # 1. Record an outage start
-    start_time = datetime(2026, 9, 17, 10, 0, 0, tzinfo=UTC)
+    now = datetime.now(UTC)
+    start_time = now - timedelta(hours=2)
     inc_id = store.record_outage_start(
         target_name="api-gateway",
         error_reason="Connection refused (port 8080)",
@@ -51,7 +52,7 @@ def test_incident_store_lifecycle(tmp_path: Path) -> None:
     assert second_id == inc_id
 
     # 2. Record recovery
-    recovery_time = datetime(2026, 9, 17, 10, 15, 30, tzinfo=UTC)
+    recovery_time = start_time + timedelta(minutes=15, seconds=30)
     recovered_inc = store.record_recovery("api-gateway", recovered_at=recovery_time)
     assert recovered_inc is not None
     assert recovered_inc.id == inc_id

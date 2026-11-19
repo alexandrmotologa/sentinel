@@ -33,8 +33,8 @@ def test_generate_prometheus_metrics():
     states = {"api-prod": state1, "db-cache": state2}
     metrics = generate_prometheus_metrics(states)
 
-    assert '# HELP sentinel_target_up' in metrics
-    assert '# TYPE sentinel_target_up gauge' in metrics
+    assert "# HELP sentinel_target_up" in metrics
+    assert "# TYPE sentinel_target_up gauge" in metrics
     assert 'sentinel_target_up{target="api-prod"} 1' in metrics
     assert 'sentinel_target_up{target="db-cache"} 0' in metrics
     assert 'sentinel_target_latency_seconds{target="api-prod"} 0.120500' in metrics
@@ -118,6 +118,15 @@ async def test_metrics_server_endpoints():
             resp_status = await client.get("/status")
             assert resp_status.status_code == 200
             assert "text/html" in resp_status.headers["content-type"]
+
+            resp_status_json = await client.get("/status.json")
+            assert resp_status_json.status_code == 200
+            assert "application/json" in resp_status_json.headers["content-type"]
+            assert resp_status_json.headers.get("access-control-allow-origin") == "*"
+            status_data = resp_status_json.json()
+            assert status_data["overall_status"] == "operational"
+            assert status_data["total_targets"] == 1
+            assert status_data["targets"][0]["name"] == "svc-1"
 
             resp_404 = await client.get("/unknown-path")
             assert resp_404.status_code == 404

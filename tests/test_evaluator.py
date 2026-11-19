@@ -49,9 +49,7 @@ def test_json_matching():
     assert ok and err is None
 
     # Match nested dict
-    ok, err = _match_json_structure(
-        {"service": {"name": "payments", "ready": True}}, actual
-    )
+    ok, err = _match_json_structure({"service": {"name": "payments", "ready": True}}, actual)
     assert ok and err is None
 
     # Match dot-notation key

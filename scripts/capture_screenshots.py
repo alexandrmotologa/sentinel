@@ -17,6 +17,7 @@ VIEWS = [
     ("04_metrics.html", "04_metrics.png", 1180, 760),
 ]
 
+
 def main() -> None:
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
@@ -44,6 +45,7 @@ def main() -> None:
         print(f"  -> Saved to {png_file} and copied to {dest_artifact}")
 
     print("\nAll 4 production screenshots captured successfully!")
+
 
 if __name__ == "__main__":
     main()
